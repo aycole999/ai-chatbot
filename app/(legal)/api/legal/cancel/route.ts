@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   buildEmbedJsonHeaders,
   getBaseUrl,
+  getOrigin,
   requireEmbedToken,
 } from "@/lib/legal/proxy-utils";
 
@@ -32,9 +33,10 @@ export async function POST(request: Request) {
 
   try {
     const baseUrl = getBaseUrl();
+    const origin = getOrigin(request);
     const response = await fetch(`${baseUrl}/app/legal/embed/cancel`, {
       method: "POST",
-      headers: buildEmbedJsonHeaders(token),
+      headers: buildEmbedJsonHeaders(token, origin),
       body: JSON.stringify(body),
       signal: request.signal,
     });

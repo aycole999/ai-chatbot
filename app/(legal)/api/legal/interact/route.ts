@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   buildEmbedJsonHeaders,
   getBaseUrl,
+  getOrigin,
   requireEmbedToken,
   safeReadJson,
 } from "@/lib/legal/proxy-utils";
@@ -48,7 +49,8 @@ export async function POST(request: Request) {
 
   try {
     const baseUrl = getBaseUrl();
-    const headers = buildEmbedJsonHeaders(token);
+    const origin = getOrigin(request);
+    const headers = buildEmbedJsonHeaders(token, origin);
 
     const upstreamBody = {
       session_id: requestBody.session_id,

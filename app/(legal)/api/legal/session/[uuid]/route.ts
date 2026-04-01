@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   buildEmbedHeaders,
   getBaseUrl,
+  getOrigin,
   requireEmbedToken,
 } from "@/lib/legal/proxy-utils";
 
@@ -28,9 +29,10 @@ export async function GET(
 
   try {
     const baseUrl = getBaseUrl();
+    const origin = getOrigin(request);
     const response = await fetch(`${baseUrl}/app/legal/embed/session/${uuid}`, {
       method: "GET",
-      headers: buildEmbedHeaders(token),
+      headers: buildEmbedHeaders(token, origin),
       signal: request.signal,
     });
 

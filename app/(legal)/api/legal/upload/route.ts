@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   buildEmbedHeaders,
   getBaseUrl,
+  getOrigin,
   requireEmbedToken,
 } from "@/lib/legal/proxy-utils";
 
@@ -36,9 +37,10 @@ export async function POST(request: Request) {
     }
 
     const baseUrl = getBaseUrl();
+    const origin = getOrigin(request);
     const response = await fetch(`${baseUrl}/app/legal/embed/upload/files`, {
       method: "POST",
-      headers: buildEmbedHeaders(token),
+      headers: buildEmbedHeaders(token, origin),
       body: backendFormData,
       signal: request.signal,
     });

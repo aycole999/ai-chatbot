@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getBaseUrl, safeReadJson } from "@/lib/legal/proxy-utils";
+import {
+  buildOriginHeaders,
+  getBaseUrl,
+  getOrigin,
+  safeReadJson,
+} from "@/lib/legal/proxy-utils";
 
 const requestSchema = z.object({
   captchaToken: z.string(),
@@ -24,9 +29,11 @@ export async function POST(request: Request) {
   try {
     const baseUrl = getBaseUrl();
 
+    const origin = getOrigin(request);
+
     const response = await fetch(`${baseUrl}/app/legal/embed/bootstrap`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: buildOriginHeaders(origin),
       body: JSON.stringify(body),
       signal: request.signal,
     });

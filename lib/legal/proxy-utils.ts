@@ -19,22 +19,58 @@ export function getEmbedToken(request: Request): string | null {
 }
 
 /**
- * 构建带 embed token 的请求头（JSON 请求）
+ * 从浏览器请求中提取 Origin，用于转发给后端白名单校验
  */
-export function buildEmbedJsonHeaders(embedToken: string): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    "x-embed-session-token": embedToken,
-  };
+export function getOrigin(request: Request): string | null {
+  return request.headers.get("origin");
 }
 
 /**
- * 构建带 embed token 的请求头（非 JSON 请求，如 multipart）
+ * 构建带 embed token + Origin 的请求头（JSON 请求）
  */
-export function buildEmbedHeaders(embedToken: string): HeadersInit {
-  return {
+export function buildEmbedJsonHeaders(
+  embedToken: string,
+  origin?: string | null
+): HeadersInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
     "x-embed-session-token": embedToken,
   };
+  if (origin) {
+    headers.Origin = origin;
+  }
+  return headers;
+}
+
+/**
+ * 构建带 embed token + Origin 的请求头（非 JSON 请求，如 multipart）
+ */
+export function buildEmbedHeaders(
+  embedToken: string,
+  origin?: string | null
+): HeadersInit {
+  const headers: Record<string, string> = {
+    "x-embed-session-token": embedToken,
+  };
+  if (origin) {
+    headers.Origin = origin;
+  }
+  return headers;
+}
+
+/**
+ * 构建仅带 Origin 的请求头（bootstrap 不需要 token）
+ */
+export function buildOriginHeaders(
+  origin?: string | null
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (origin) {
+    headers.Origin = origin;
+  }
+  return headers;
 }
 
 /**
