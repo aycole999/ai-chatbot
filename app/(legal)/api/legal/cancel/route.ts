@@ -1,36 +1,25 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import {
+  buildEmbedJsonHeaders,
+  getBaseUrl,
+  requireEmbedToken,
+} from "@/lib/legal/proxy-utils";
+
 const requestSchema = z.object({
-  session_id: z.string(),
-  message_id: z.number().optional(),
+  sessionUuid: z.string(),
+  messageId: z.number().optional(),
 });
 
-function getBackendUrl(): string {
-  const baseUrl = process.env.BASE_URL;
-  if (!baseUrl) {
-    throw new Error("BASE_URL is not configured");
-  }
-  return `${baseUrl}/app/legal/ai/message/cancel`;
-}
-
-function buildHeaders(): HeadersInit {
-  const token = process.env.BEARER_TOKEN;
-  const clientId = process.env.CLIENTID;
-  if (!token) {
-    throw new Error("BEARER_TOKEN is not configured");
-  }
-  if (!clientId) {
-    throw new Error("CLIENTID is not configured");
-  }
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-    clientid: clientId,
-  };
-}
-
 export async function POST(request: Request) {
+  // 校验 embed token
+  const tokenResult = requireEmbedToken(request);
+  if ("error" in tokenResult) {
+    return tokenResult.error;
+  }
+  const { token } = tokenResult;
+
   let body: z.infer<typeof requestSchema>;
   try {
     body = requestSchema.parse(await request.json());
@@ -42,38 +31,33 @@ export async function POST(request: Request) {
   }
 
   try {
-    const upstreamBody: Record<string, unknown> = {
-      sessionUuid: body.session_id,
-    };
-    if (body.message_id !== undefined) {
-      upstreamBody.messageId = body.message_id;
-    }
-
-    const response = await fetch(getBackendUrl(), {
+    const baseUrl = getBaseUrl();
+    const response = await fetch(`${baseUrl}/app/legal/embed/cancel`, {
       method: "POST",
-      headers: buildHeaders(),
-      body: JSON.stringify(upstreamBody),
+      headers: buildEmbedJsonHeaders(token),
+      body: JSON.stringify(body),
       signal: request.signal,
     });
 
-    let result: any = null;
+    let result: Record<string, unknown> | null = null;
     try {
-      result = await response.json();
+      result = (await response.json()) as Record<string, unknown>;
     } catch {
       result = null;
     }
 
     if (!response.ok) {
-      const msg = result?.msg || "Cancel failed";
+      const msg =
+        (result as { msg?: string } | null)?.msg || "Cancel failed";
       return NextResponse.json({ error: msg }, { status: response.status });
     }
 
-    if (result?.code === 200) {
+    if (result && (result as { code?: number }).code === 200) {
       return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json(
-      { error: result?.msg || "Cancel failed" },
+      { error: (result as { msg?: string } | null)?.msg || "Cancel failed" },
       { status: 400 }
     );
   } catch (error) {

@@ -24,24 +24,28 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
-    const files = formData.getAll("files") as File[];
+    const file = formData.get("file") as File | null;
 
-    if (!files.length) {
-      return NextResponse.json({ error: "No files provided" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json(
+        { error: "No audio file provided" },
+        { status: 400 }
+      );
     }
 
     const backendFormData = new FormData();
-    for (const file of files) {
-      backendFormData.append("files", file, file.name);
-    }
+    backendFormData.append("file", file, file.name);
 
     const baseUrl = getBaseUrl();
-    const response = await fetch(`${baseUrl}/app/legal/embed/upload/files`, {
-      method: "POST",
-      headers: buildEmbedHeaders(token),
-      body: backendFormData,
-      signal: request.signal,
-    });
+    const response = await fetch(
+      `${baseUrl}/app/legal/embed/voice/recognize`,
+      {
+        method: "POST",
+        headers: buildEmbedHeaders(token),
+        body: backendFormData,
+        signal: request.signal,
+      }
+    );
 
     let result: Record<string, unknown> | null = null;
     try {
@@ -52,7 +56,8 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const msg =
-        (result as { msg?: string } | null)?.msg || "Upload failed";
+        (result as { msg?: string } | null)?.msg ||
+        "Voice recognition failed";
       return NextResponse.json({ error: msg }, { status: response.status });
     }
 
@@ -65,11 +70,18 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { error: (result as { msg?: string } | null)?.msg || "Upload failed" },
+      {
+        error:
+          (result as { msg?: string } | null)?.msg ||
+          "Voice recognition failed",
+      },
       { status: 400 }
     );
   } catch (error) {
-    console.error("Legal upload API error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    console.error("Voice recognition API error:", error);
+    return NextResponse.json(
+      { error: "Voice recognition failed" },
+      { status: 500 }
+    );
   }
 }

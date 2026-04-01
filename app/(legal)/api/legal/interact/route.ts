@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import type { LegalApiResponse, LegalInteractRequest } from "@/lib/legal/types";
+import type { LegalApiResponse } from "@/lib/legal/types";
+import {
+  buildEmbedJsonHeaders,
+  getBaseUrl,
+  requireEmbedToken,
+  safeReadJson,
+} from "@/lib/legal/proxy-utils";
 
-// 请求验证 schema
 const requestSchema = z.object({
-  session_id: z.string().optional(),
+  session_id: z.string(),
   message: z.string().optional(),
   stream: z.boolean().optional().default(false),
   action: z.string().optional(),
@@ -23,50 +28,18 @@ const requestSchema = z.object({
     .optional(),
 });
 
-function getBaseUrl(): string {
-  const baseUrl = process.env.BASE_URL;
-  if (!baseUrl) {
-    throw new Error("BASE_URL is not configured");
-  }
-  return baseUrl;
-}
-
-function getAuthHeaders(): HeadersInit {
-  const token = process.env.BEARER_TOKEN;
-  const clientId = process.env.CLIENTID;
-  if (!token) {
-    throw new Error("BEARER_TOKEN is not configured");
-  }
-  if (!clientId) {
-    throw new Error("CLIENTID is not configured");
-  }
-  return {
-    Authorization: `Bearer ${token}`,
-    clientid: clientId,
-  };
-}
-
-function buildJsonHeaders(): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    ...getAuthHeaders(),
-  };
-}
-
-async function safeReadJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
 export async function POST(request: Request) {
-  // 解析和验证请求体
-  let requestBody: LegalInteractRequest;
+  // 校验 embed token
+  const tokenResult = requireEmbedToken(request);
+  if ("error" in tokenResult) {
+    return tokenResult.error;
+  }
+  const { token } = tokenResult;
+
+  // 解析请求体
+  let requestBody: z.infer<typeof requestSchema>;
   try {
-    const json = await request.json();
-    requestBody = requestSchema.parse(json);
+    requestBody = requestSchema.parse(await request.json());
   } catch {
     return NextResponse.json(
       { error: "Invalid request body" },
@@ -76,43 +49,7 @@ export async function POST(request: Request) {
 
   try {
     const baseUrl = getBaseUrl();
-    const headers = buildJsonHeaders();
-
-    // init：无 session_id 时创建会话并返回 greeting
-    if (!requestBody.session_id) {
-      const response = await fetch(`${baseUrl}/app/legal/ai/session/create`, {
-        method: "POST",
-        headers,
-        signal: request.signal,
-      });
-
-      const raw = await safeReadJson(response);
-      const payload = raw as { code?: number; msg?: string; data?: any } | null;
-      if (!response.ok || !payload || payload.code !== 200 || !payload.data) {
-        const msg = payload?.msg || "Failed to create session";
-        return NextResponse.json(
-          { error: msg },
-          { status: response.status || 500 }
-        );
-      }
-
-      const session = payload.data as {
-        sessionUuid?: string;
-        currentStep?: string;
-        lastMessageText?: string;
-      };
-
-      const data: LegalApiResponse = {
-        session_id: session.sessionUuid || "",
-        next_step:
-          (session.currentStep as LegalApiResponse["next_step"]) || "greeting",
-        data: {
-          message: session.lastMessageText || "",
-        },
-      };
-
-      return NextResponse.json(data);
-    }
+    const headers = buildEmbedJsonHeaders(token);
 
     const upstreamBody = {
       session_id: requestBody.session_id,
@@ -125,7 +62,7 @@ export async function POST(request: Request) {
 
     // 非流式请求
     if (!requestBody.stream) {
-      const response = await fetch(`${baseUrl}/app/legal/ai/message/send`, {
+      const response = await fetch(`${baseUrl}/app/legal/embed/send`, {
         method: "POST",
         headers,
         body: JSON.stringify(upstreamBody),
@@ -134,8 +71,7 @@ export async function POST(request: Request) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("RuoYi backend error:", errorText);
-
+        console.error("Embed backend error:", errorText);
         return NextResponse.json(
           { error: "Backend service error" },
           { status: response.status }
@@ -143,7 +79,11 @@ export async function POST(request: Request) {
       }
 
       const raw = await safeReadJson(response);
-      const payload = raw as { code?: number; msg?: string; data?: any } | null;
+      const payload = raw as {
+        code?: number;
+        msg?: string;
+        data?: unknown;
+      } | null;
       if (!payload || payload.code !== 200 || !payload.data) {
         const msg = payload?.msg || "Backend service error";
         return NextResponse.json({ error: msg }, { status: 502 });
@@ -173,26 +113,22 @@ export async function POST(request: Request) {
     }
 
     // 流式请求 - 代理 SSE
-    const response = await fetch(
-      `${baseUrl}/app/legal/ai/message/send_stream`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(upstreamBody),
-        signal: request.signal,
-      }
-    );
+    const response = await fetch(`${baseUrl}/app/legal/embed/send_stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(upstreamBody),
+      signal: request.signal,
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("RuoYi backend stream error:", errorText);
+      console.error("Embed backend stream error:", errorText);
       return NextResponse.json(
         { error: "Backend service error" },
         { status: response.status }
       );
     }
 
-    // 代理 SSE 流
     const stream = response.body;
     if (!stream) {
       return NextResponse.json(
