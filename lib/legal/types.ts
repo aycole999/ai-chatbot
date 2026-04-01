@@ -163,6 +163,55 @@ export interface StreamEvent {
   message?: string;
 }
 
+// ============================================================
+// Embed API 类型
+// ============================================================
+
+// Bootstrap 请求
+export interface BootstrapRequest {
+  captchaToken: string;
+  clientNonce: string;
+  pageUrl: string;
+  parentReferrer?: string;
+}
+
+// Bootstrap 响应
+export interface BootstrapResponse {
+  sessionUuid: string;
+  embedSessionToken: string;
+  expiresIn: number;
+  idleExpiresIn: number;
+  nextStep: string;
+  message: string;
+  prompt: string;
+  limits: EmbedLimits;
+}
+
+// 会话限制
+export interface EmbedLimits {
+  maxRounds: number;
+  maxInputChars: number;
+  uploadLimitPerMinute: number;
+  voiceLimitPerMinute: number;
+}
+
+// 语音识别响应
+export interface VoiceRecognizeResponse {
+  text: string;
+  provider: string;
+  elapsedMs: number;
+}
+
+// 会话详情
+export interface EmbedSessionInfo {
+  sessionUuid: string;
+  currentStep: string;
+  status: number;
+  expireTime: string;
+  messageCount: number;
+  lastMessageText: string;
+}
+
 // App 侧媒体附件（通过 ossId 引用；后端负责 textract 与落库）
 export interface LegalMediaAttachment {
   oss_id: number;
@@ -205,50 +254,13 @@ export interface LegalInteractRequest {
   action?:
     | "continue"
     | "skip"
-    | "generate_document"
     | "submit_answers"
+    | "submit_pre_questions"
+    | "pre_generate_document"
+    | "close"
     | string;
   data?: Record<string, unknown>;
   media_attachments?: LegalMediaAttachment[];
-}
-
-// OCR 提取请求
-export interface TextractRequest {
-  fileId: string;
-  scene?: string;
-}
-
-// OCR 单文件提取响应
-export interface TextractResponse {
-  text: string;
-  confidence?: number;
-}
-
-// Textract 多文件提取 - 单个文件结果
-export interface TextractFileResult {
-  file_type: string;
-  filename: string;
-  status: "success" | "failed";
-  text: string;
-  ossId: string;
-  error?: string;
-}
-
-// Textract 多文件提取响应
-export interface TextractMultipleResponse {
-  failed: number;
-  success: number;
-  total: number;
-  status: string;
-  results: TextractFileResult[];
-}
-
-// 文件上传响应
-export interface FileUploadResponse {
-  url: string;
-  pathname: string;
-  contentType: string;
-  fileId: string;
 }
 
 // 聊天状态
@@ -259,6 +271,10 @@ export interface LegalChatState {
   isLoading: boolean;
   isStreaming: boolean;
   error: string | null;
+
+  // embed 会话
+  embedSessionToken: string | null;
+  limits: EmbedLimits | null;
 
   // greeting 阶段
   greeting?: {
