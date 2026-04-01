@@ -37,6 +37,10 @@ const initialState: LegalChatState = {
   isStreaming: false,
   error: null,
 
+  // embed 会话
+  embedSessionToken: null,
+  limits: null,
+
   // greeting
   greeting: undefined,
 
@@ -236,31 +240,42 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
 
   const postInteract = useCallback(
     (body: LegalInteractRequest, signal: AbortSignal) => {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (state.embedSessionToken) {
+        headers["x-embed-session-token"] = state.embedSessionToken;
+      }
       return fetch("/api/legal/interact", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(body),
         signal,
       });
     },
-    []
+    [state.embedSessionToken]
   );
 
-  const postCancel = useCallback(async (sessionId: string) => {
-    try {
-      await fetch("/api/legal/cancel", {
-        method: "POST",
-        headers: {
+  const postCancel = useCallback(
+    async (sessionId: string) => {
+      try {
+        const headers: Record<string, string> = {
           "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-    } catch {
-      // best-effort
-    }
-  }, []);
+        };
+        if (state.embedSessionToken) {
+          headers["x-embed-session-token"] = state.embedSessionToken;
+        }
+        await fetch("/api/legal/cancel", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ sessionUuid: sessionId }),
+        });
+      } catch {
+        // best-effort
+      }
+    },
+    [state.embedSessionToken]
+  );
 
   // 添加用户消息
   const addUserMessage = useCallback(
@@ -789,7 +804,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
     setState(initialState);
   }, []);
 
-  // 初始化会话（获取欢迎消息）
+  // 初始化会话（调用 bootstrap 获取 embed session token）
   const initSession = useCallback(async () => {
     setState((prev) => ({
       ...prev,
@@ -801,15 +816,64 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const response = await postInteract({ stream: false }, controller.signal);
+      const response = await fetch("/api/legal/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          captchaToken: "mock-pass",
+          clientNonce: `nonce-${Date.now()}-${generateUUID().slice(0, 8)}`,
+          pageUrl: typeof window !== "undefined" ? window.location.href : "",
+          parentReferrer:
+            typeof document !== "undefined" ? document.referrer : undefined,
+        }),
+        signal: controller.signal,
+      });
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
-          (errorData as any).error || "Failed to initialize session"
+          (errorData as { error?: string }).error ||
+            "Failed to initialize session"
         );
       }
-      const data: LegalApiResponse = await response.json();
-      handleResponse(data);
+
+      const data = (await response.json()) as {
+        sessionUuid: string;
+        embedSessionToken: string;
+        expiresIn: number;
+        idleExpiresIn: number;
+        nextStep: string;
+        message: string;
+        prompt: string;
+        limits: {
+          maxRounds: number;
+          maxInputChars: number;
+          uploadLimitPerMinute: number;
+          voiceLimitPerMinute: number;
+        };
+      };
+
+      setState((prev) => ({
+        ...prev,
+        sessionId: data.sessionUuid,
+        embedSessionToken: data.embedSessionToken,
+        limits: data.limits,
+        currentStep: "greeting" as const,
+        isLoading: false,
+        greeting: {
+          message: data.message || "",
+          prompt: data.prompt || "请描述您的问题或案件情况：",
+        },
+      }));
+
+      addAssistantMessage(
+        data.message || "欢迎使用法律文书助手",
+        "greeting",
+        {
+          message: data.message,
+          prompt: data.prompt,
+        }
+      );
     } catch (error) {
       setState((prev) => ({
         ...prev,
@@ -820,7 +884,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
             : "Failed to initialize session",
       }));
     }
-  }, [handleResponse, postInteract]);
+  }, [addAssistantMessage]);
 
   return {
     // 状态
