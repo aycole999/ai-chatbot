@@ -12,7 +12,6 @@ import {
 import { toast } from "sonner";
 
 import { useLegalChat } from "@/hooks/use-legal-chat";
-import { recognizeVoice } from "@/lib/api";
 import type {
   LegalAttachment,
   LegalMessage,
@@ -409,6 +408,7 @@ export function LegalChat() {
     isLoading,
     isStreaming,
     error,
+    embedSessionToken,
     // 各阶段专属状态
     caseInfo,
     documentPaths,
@@ -528,8 +528,14 @@ export function LegalChat() {
         formData.append("files", file, file.name);
       }
 
+      const headers: Record<string, string> = {};
+      if (embedSessionToken) {
+        headers["x-embed-session-token"] = embedSessionToken;
+      }
+
       const response = await fetch("/api/legal/upload", {
         method: "POST",
+        headers,
         body: formData,
       });
 
@@ -559,7 +565,7 @@ export function LegalChat() {
       }
       return list;
     },
-    []
+    [embedSessionToken]
   );
 
   // 处理文件选择
@@ -616,29 +622,47 @@ export function LegalChat() {
   // 语音录制完成后处理（只填充文本，不添加附件）
   const handleVoiceRecordingComplete = useCallback(
     async (blob: Blob, _duration: number) => {
-      const result = await recognizeVoice(blob);
+      try {
+        const file = new File([blob], `voice_${Date.now()}.webm`, {
+          type: blob.type,
+        });
 
-      if (!result.success) {
-        toast.error(result.message || "语音识别失败");
-        return;
-      }
+        const formData = new FormData();
+        formData.append("file", file);
 
-      if (!result.data?.results?.length) {
+        const headers: Record<string, string> = {};
+        if (embedSessionToken) {
+          headers["x-embed-session-token"] = embedSessionToken;
+        }
+
+        const response = await fetch("/api/legal/voice", {
+          method: "POST",
+          headers,
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          toast.error(
+            (errorData as { error?: string }).error || "语音识别失败"
+          );
+          return;
+        }
+
+        const data = (await response.json()) as { text: string };
+
+        if (data.text) {
+          setInputValue((prev) =>
+            prev ? `${prev} ${data.text}` : data.text
+          );
+        } else {
+          toast.error("语音识别未返回结果");
+        }
+      } catch {
         toast.error("语音识别失败");
-        return;
-      }
-
-      const voiceResult = result.data.results[0];
-      if (voiceResult.status === "success" && voiceResult.text) {
-        // 只填充文本到输入框，不添加附件
-        setInputValue((prev) =>
-          prev ? `${prev} ${voiceResult.text}` : voiceResult.text
-        );
-      } else if (voiceResult.status === "failed") {
-        toast.error(voiceResult.error || "语音识别失败");
       }
     },
-    []
+    [embedSessionToken]
   );
 
   // 使用语音输入 hook
