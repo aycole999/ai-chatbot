@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-
-import type { LegalApiResponse } from "@/lib/legal/types";
 import {
   buildEmbedJsonHeaders,
   getBaseUrl,
   requireEmbedToken,
   safeReadJson,
 } from "@/lib/legal/proxy-utils";
+import type { LegalApiResponse } from "@/lib/legal/types";
 
 const requestSchema = z.object({
   session_id: z.string(),

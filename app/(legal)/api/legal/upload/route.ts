@@ -51,8 +51,7 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      const msg =
-        (result as { msg?: string } | null)?.msg || "Upload failed";
+      const msg = (result as { msg?: string } | null)?.msg || "Upload failed";
       return NextResponse.json({ error: msg }, { status: response.status });
     }
 

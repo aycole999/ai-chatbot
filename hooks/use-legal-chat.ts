@@ -822,9 +822,9 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         body: JSON.stringify({
           captchaToken: "mock-pass",
           clientNonce: `nonce-${Date.now()}-${generateUUID().slice(0, 8)}`,
-          pageUrl: typeof window !== "undefined" ? window.location.href : "",
+          pageUrl: typeof window === "undefined" ? "" : window.location.href,
           parentReferrer:
-            typeof document !== "undefined" ? document.referrer : undefined,
+            typeof document === "undefined" ? undefined : document.referrer,
         }),
         signal: controller.signal,
       });
@@ -866,14 +866,10 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         },
       }));
 
-      addAssistantMessage(
-        data.message || "欢迎使用法律文书助手",
-        "greeting",
-        {
-          message: data.message,
-          prompt: data.prompt,
-        }
-      );
+      addAssistantMessage(data.message || "欢迎使用法律文书助手", "greeting", {
+        message: data.message,
+        prompt: data.prompt,
+      });
     } catch (error) {
       setState((prev) => ({
         ...prev,

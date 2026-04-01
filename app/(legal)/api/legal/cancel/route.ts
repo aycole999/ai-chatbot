@@ -47,8 +47,7 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      const msg =
-        (result as { msg?: string } | null)?.msg || "Cancel failed";
+      const msg = (result as { msg?: string } | null)?.msg || "Cancel failed";
       return NextResponse.json({ error: msg }, { status: response.status });
     }
 

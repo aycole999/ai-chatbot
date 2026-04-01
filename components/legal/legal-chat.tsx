@@ -652,9 +652,7 @@ export function LegalChat() {
         const data = (await response.json()) as { text: string };
 
         if (data.text) {
-          setInputValue((prev) =>
-            prev ? `${prev} ${data.text}` : data.text
-          );
+          setInputValue((prev) => (prev ? `${prev} ${data.text}` : data.text));
         } else {
           toast.error("语音识别未返回结果");
         }

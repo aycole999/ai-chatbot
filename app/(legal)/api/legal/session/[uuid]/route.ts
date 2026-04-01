@@ -28,14 +28,11 @@ export async function GET(
 
   try {
     const baseUrl = getBaseUrl();
-    const response = await fetch(
-      `${baseUrl}/app/legal/embed/session/${uuid}`,
-      {
-        method: "GET",
-        headers: buildEmbedHeaders(token),
-        signal: request.signal,
-      }
-    );
+    const response = await fetch(`${baseUrl}/app/legal/embed/session/${uuid}`, {
+      method: "GET",
+      headers: buildEmbedHeaders(token),
+      signal: request.signal,
+    });
 
     let result: Record<string, unknown> | null = null;
     try {
@@ -46,8 +43,7 @@ export async function GET(
 
     if (!response.ok) {
       const msg =
-        (result as { msg?: string } | null)?.msg ||
-        "Failed to get session";
+        (result as { msg?: string } | null)?.msg || "Failed to get session";
       return NextResponse.json({ error: msg }, { status: response.status });
     }
 
@@ -62,8 +58,7 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          (result as { msg?: string } | null)?.msg ||
-          "Failed to get session",
+          (result as { msg?: string } | null)?.msg || "Failed to get session",
       },
       { status: 400 }
     );
