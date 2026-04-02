@@ -13,9 +13,12 @@ import { toast } from "sonner";
 
 import { useLegalChat } from "@/hooks/use-legal-chat";
 import type {
+  FillQuestion,
   LegalAttachment,
   LegalMessage,
   LegalStep,
+  PreQuestion,
+  SupplementField,
 } from "@/lib/legal/types";
 import { cn } from "@/lib/utils";
 import { Response } from "../elements/response";
@@ -26,14 +29,15 @@ import { ImagePreview } from "../ui/image-preview";
 import { Textarea } from "../ui/textarea";
 import { AttachmentAnalysisCard } from "./attachment-analysis";
 import {
-  CaseInfoCard,
   CompletedDocument,
-  ConsultationProgressIndicator,
-  DocumentPathSelector,
+  FillQuestionsForm,
+  FillQuestionsSubmitted,
   LaborContractCheck,
-  PathSelectedConfirm,
-  QuestionCard,
+  PreQuestionsForm,
+  PreQuestionsSubmitted,
+  SessionClosedBanner,
   SupplementForm,
+  SupplementSubmitted,
 } from "./step-renderers";
 import { InlineVoiceRecorder, useVoiceInput } from "./voice-input";
 
@@ -68,7 +72,7 @@ function getFileExtension(name: string) {
 }
 
 type UploadCredentialVo = {
-  ossId: number;
+  ossId: string;
   url: string;
   fileName: string;
   fileSize: number;
@@ -145,7 +149,7 @@ function LegalMessageItem({
           {message.attachments && message.attachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {message.attachments.map((attachment) => {
-                const imageUrl = attachment.local_url || attachment.file_url;
+                const imageUrl = attachment.file_url || attachment.local_url;
                 const isImage = attachment.content_type.startsWith("image/");
 
                 if (isImage && imageUrl) {
@@ -189,6 +193,29 @@ function LegalMessageItem({
               </div>
             )}
           </div>
+
+          {/* 已提交表单（只读） */}
+          {isUser && message.formData?.type === "pre_questions" && (
+            <PreQuestionsSubmitted
+              answers={message.formData.answers as Record<string, string>}
+              questions={message.formData.questions as PreQuestion[]}
+              selectedTypeLabel={
+                (message.formData.selectedTypeLabel as string) || ""
+              }
+            />
+          )}
+          {isUser && message.formData?.type === "fill_questions" && (
+            <FillQuestionsSubmitted
+              questions={message.formData.questions as FillQuestion[]}
+              values={message.formData.values as Record<string, string>}
+            />
+          )}
+          {isUser && message.formData?.type === "supplement_info" && (
+            <SupplementSubmitted
+              fields={message.formData.fields as SupplementField[]}
+              values={message.formData.values as Record<string, string>}
+            />
+          )}
 
           {/* 附件分析结果 */}
           {message.data?.attachment_analysis &&
@@ -240,24 +267,41 @@ function ThinkingIndicator() {
 }
 
 // ============================================================
+// 消息操作栏（consulting 阶段 "生成文书" 按钮）
+// ============================================================
+function MessageActionBar({
+  onGenerateDocument,
+  isLoading,
+}: {
+  onGenerateDocument: () => void;
+  isLoading?: boolean;
+}) {
+  return (
+    <div className="flex gap-2 pl-10">
+      <Button
+        disabled={isLoading}
+        onClick={onGenerateDocument}
+        size="sm"
+        variant="outline"
+      >
+        生成文书
+      </Button>
+    </div>
+  );
+}
+
+// ============================================================
 // 根据 step 渲染特定的交互组件
 // ============================================================
 interface StepInteractionProps {
   currentStep: LegalStep;
   // State props
-  caseInfo?: { case_type: string; confidence: number };
-  documentPaths: import("@/lib/legal/types").DocumentPath[];
-  recommendedPath: import("@/lib/legal/types").RecommendedPath | null;
-  consultationProgress: import("@/lib/legal/types").ConsultationProgress | null;
-  needMoreInfo: boolean;
-  canProceed: boolean;
-  currentQuestion: import("@/lib/legal/types").QuestionMeta | null;
-  questionProgress: import("@/lib/legal/types").QuestionProgress | null;
-  requireAttachment: boolean;
-  attachmentHint: string | null;
-  factAnalysis: import("@/lib/legal/types").FactAnalysis | null;
   canSkipContract: boolean;
-  supplementFields: import("@/lib/legal/types").SupplementField[];
+  supplementFields: SupplementField[];
+  preQuestions: PreQuestion[];
+  fillQuestions: FillQuestion[];
+  documentTypes: import("@/lib/legal/types").DocumentTypeOption[];
+  templateId: string | null;
   completedDocument?: {
     document_id: string;
     doc_type: string;
@@ -266,88 +310,55 @@ interface StepInteractionProps {
   };
   isLoading: boolean;
   // Action props
-  onSelectPath: (path: import("@/lib/legal/types").DocumentPath) => void;
   onContractCheck: (hasContract: boolean) => void;
   onSkipContract: () => void;
-  onSubmitSupplement: (values: Record<string, string>) => void;
+  onSubmitSupplement: (
+    fields: SupplementField[],
+    values: Record<string, string>
+  ) => void;
+  onSubmitFillQuestions: (
+    questions: FillQuestion[],
+    values: Record<string, string>
+  ) => void;
+  onSubmitPreQuestions: (
+    templateId: string,
+    answers: Record<string, string>,
+    questions: PreQuestion[],
+    selectedType: string,
+    selectedTypeLabel: string
+  ) => void;
+  onClose: () => void;
   onReset: () => void;
 }
 
 function StepInteraction({
   currentStep,
-  caseInfo,
-  documentPaths,
-  recommendedPath,
-  consultationProgress,
-  needMoreInfo,
-  canProceed,
-  currentQuestion,
-  questionProgress,
-  requireAttachment,
-  attachmentHint,
-  factAnalysis,
   canSkipContract,
   supplementFields,
+  preQuestions,
+  fillQuestions,
+  documentTypes,
+  templateId,
   completedDocument,
   isLoading,
-  onSelectPath,
   onContractCheck,
   onSkipContract,
   onSubmitSupplement,
+  onSubmitFillQuestions,
+  onSubmitPreQuestions,
+  onClose,
   onReset,
 }: StepInteractionProps) {
   // 根据 currentStep 返回对应的交互组件
   switch (currentStep) {
-    case "consulting":
-      // 咨询阶段：显示进度指示器
-      if (consultationProgress) {
+    case "fill_questions":
+      // 填充问题表单
+      if (fillQuestions.length > 0) {
         return (
-          <ConsultationProgressIndicator
-            canProceed={canProceed}
-            needMoreInfo={needMoreInfo}
-            progress={consultationProgress}
-          />
-        );
-      }
-      return null;
-
-    case "select_document_path":
-      // 文书路径选择阶段
-      return (
-        <div className="space-y-4">
-          {/* 案由信息卡片 */}
-          {caseInfo && (
-            <CaseInfoCard
-              caseType={caseInfo.case_type}
-              confidence={caseInfo.confidence}
-            />
-          )}
-          {/* 路径选择器 */}
-          {documentPaths.length > 0 && (
-            <DocumentPathSelector
-              isLoading={isLoading}
-              onSelect={onSelectPath}
-              paths={documentPaths}
-              recommendedPath={recommendedPath}
-            />
-          )}
-        </div>
-      );
-
-    case "path_selected":
-      // 路径已选择：显示确认信息
-      return <PathSelectedConfirm message="已确认选择，正在准备问题..." />;
-
-    case "ask_question":
-      // 问答阶段：显示问题卡片
-      if (currentQuestion) {
-        return (
-          <QuestionCard
-            attachmentHint={attachmentHint}
-            factAnalysis={factAnalysis}
-            progress={questionProgress}
-            question={currentQuestion}
-            requireAttachment={requireAttachment}
+          <FillQuestionsForm
+            isLoading={isLoading}
+            onSubmit={onSubmitFillQuestions}
+            questions={fillQuestions}
           />
         );
       }
@@ -378,6 +389,21 @@ function StepInteraction({
       }
       return null;
 
+    case "pre_questions":
+      // 问卷表单阶段
+      if (preQuestions.length > 0 && templateId) {
+        return (
+          <PreQuestionsForm
+            documentTypes={documentTypes}
+            isLoading={isLoading}
+            onSubmit={onSubmitPreQuestions}
+            questions={preQuestions}
+            templateId={templateId}
+          />
+        );
+      }
+      return null;
+
     case "completed":
       // 完成状态
       if (completedDocument) {
@@ -386,11 +412,16 @@ function StepInteraction({
             content={completedDocument.content}
             docType={completedDocument.doc_type}
             downloadUrl={completedDocument.download_url}
+            isLoading={isLoading}
+            onClose={onClose}
             onReset={onReset}
           />
         );
       }
       return null;
+
+    case "session_closed":
+      return <SessionClosedBanner onReset={onReset} />;
 
     default:
       return null;
@@ -410,27 +441,22 @@ export function LegalChat() {
     error,
     embedSessionToken,
     // 各阶段专属状态
-    caseInfo,
-    documentPaths,
-    recommendedPath,
-    consultationProgress,
-    needMoreInfo,
-    canProceed,
-    currentQuestion,
-    questionProgress,
-    requireAttachment,
-    attachmentHint,
-    factAnalysis,
     canSkipContract,
     supplementFields,
+    preQuestions,
+    fillQuestions,
+    documentTypes,
+    templateId,
     completedDocument,
     streamingEnabled,
     // 方法
     sendMessage,
-    selectPath,
-    autoContinue,
     skipContractCheck,
+    submitFillQuestions,
     submitSupplementInfo,
+    generateDocument,
+    submitPreQuestions,
+    closeSession,
     stopStream,
     reset,
     initSession,
@@ -443,7 +469,6 @@ export function LegalChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const autoContiuneTriggeredRef = useRef(false);
   const hasInitializedRef = useRef(false);
 
   // 初始化会话（使用 ref 防止 React Strict Mode 下重复调用）
@@ -479,22 +504,6 @@ export function LegalChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentStep]);
-
-  // 处理 path_selected 的自动继续
-  useEffect(() => {
-    if (currentStep === "path_selected" && !autoContiuneTriggeredRef.current) {
-      autoContiuneTriggeredRef.current = true;
-      // 延迟 1 秒后自动继续
-      const timer = setTimeout(() => {
-        autoContinue();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-    // 重置标记
-    if (currentStep !== "path_selected") {
-      autoContiuneTriggeredRef.current = false;
-    }
-  }, [currentStep, autoContinue]);
 
   // 发送消息
   const handleSend = async () => {
@@ -608,7 +617,7 @@ export function LegalChat() {
   );
 
   // 移除附件
-  const removeAttachment = useCallback((ossId: number) => {
+  const removeAttachment = useCallback((ossId: string) => {
     setAttachments((prev) => {
       const attachment = prev.find((a) => a.oss_id === ossId);
       // 释放本地 Object URL
@@ -682,19 +691,18 @@ export function LegalChat() {
   };
 
   // 处理劳动合同检查
-  const handleContractCheck = async (hasContract: boolean) => {
-    await sendMessage(hasContract ? "有劳动合同" : "没有劳动合同");
-  };
+  const handleContractCheck = useCallback(
+    async (hasContract: boolean) => {
+      await sendMessage(hasContract ? "有劳动合同" : "没有劳动合同");
+    },
+    [sendMessage]
+  );
 
   // 显示输入区域的条件
-  const showInput =
-    currentStep === "greeting" ||
-    currentStep === "consulting" ||
-    currentStep === "ask_question";
+  const showInput = currentStep === "greeting" || currentStep === "consulting";
 
-  // 是否显示交互组件（不在 completed 阶段显示输入框）
-  const showStepInteraction =
-    currentStep !== "greeting" && currentStep !== "completed";
+  // 是否显示交互组件
+  const showStepInteraction = currentStep !== "greeting";
 
   return (
     <div className="flex h-full flex-col">
@@ -724,30 +732,33 @@ export function LegalChat() {
               </div>
             )}
 
+            {/* 消息操作栏：consulting 阶段可生成文书时显示 */}
+            {currentStep === "consulting" && (
+              <MessageActionBar
+                isLoading={isLoading}
+                onGenerateDocument={generateDocument}
+              />
+            )}
+
             {/* 阶段专属交互组件 */}
             {showStepInteraction && (
               <StepInteraction
-                attachmentHint={attachmentHint}
-                canProceed={canProceed}
                 canSkipContract={canSkipContract}
-                caseInfo={caseInfo}
                 completedDocument={completedDocument}
-                consultationProgress={consultationProgress}
-                currentQuestion={currentQuestion}
                 currentStep={currentStep}
-                documentPaths={documentPaths}
-                factAnalysis={factAnalysis}
+                documentTypes={documentTypes}
+                fillQuestions={fillQuestions}
                 isLoading={isLoading}
-                needMoreInfo={needMoreInfo}
+                onClose={closeSession}
                 onContractCheck={handleContractCheck}
                 onReset={reset}
-                onSelectPath={selectPath}
                 onSkipContract={skipContractCheck}
+                onSubmitFillQuestions={submitFillQuestions}
+                onSubmitPreQuestions={submitPreQuestions}
                 onSubmitSupplement={submitSupplementInfo}
-                questionProgress={questionProgress}
-                recommendedPath={recommendedPath}
-                requireAttachment={requireAttachment}
+                preQuestions={preQuestions}
                 supplementFields={supplementFields}
+                templateId={templateId}
               />
             )}
           </div>
@@ -814,11 +825,7 @@ export function LegalChat() {
                   disabled={isLoading || isStreaming}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={
-                    currentStep === "ask_question"
-                      ? "请回答上述问题..."
-                      : "请描述您的法律问题..."
-                  }
+                  placeholder="请描述您的法律问题..."
                   ref={textareaRef}
                   rows={3}
                   value={inputValue}

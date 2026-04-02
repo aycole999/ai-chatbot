@@ -111,12 +111,29 @@ export async function readSSEStreamWithAbort(
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let released = false;
+
+  const cancelReader = () => {
+    if (released) {
+      return;
+    }
+
+    try {
+      void reader.cancel().catch(() => {
+        // reader 可能已在底层关闭；取消失败时忽略即可
+      });
+    } catch {
+      // releaseLock 之后再次 cancel 会抛错；这里按中止处理
+    }
+  };
 
   // 监听中止信号
   if (signal) {
-    signal.addEventListener("abort", () => {
-      reader.cancel();
-    });
+    if (signal.aborted) {
+      cancelReader();
+    } else {
+      signal.addEventListener("abort", cancelReader, { once: true });
+    }
   }
 
   try {
@@ -152,6 +169,14 @@ export async function readSSEStreamWithAbort(
       }
     }
   } finally {
-    reader.releaseLock();
+    released = true;
+    if (signal) {
+      signal.removeEventListener("abort", cancelReader);
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // 某些异常路径下 reader 可能已被关闭
+    }
   }
 }

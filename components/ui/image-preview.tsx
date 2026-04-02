@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 
-import { Dialog, DialogContent, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
+import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +51,10 @@ export function ImagePreview({
         <DialogPrimitive.Content
           className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
         >
+          <DialogTitle className="sr-only">
+            查看图片：{alt}
+          </DialogTitle>
+
           {/* 关闭按钮 */}
           <DialogPrimitive.Close className="absolute -top-10 right-0 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20 focus:outline-none">
             <X className="size-6" />

@@ -4,8 +4,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { readSSEStreamWithAbort } from "@/lib/legal/stream-parser";
 import type {
-  DocumentPath,
-  FactAnalysis,
+  FillQuestion,
   LegalApiResponse,
   LegalAttachment,
   LegalChatState,
@@ -13,10 +12,7 @@ import type {
   LegalMessage,
   LegalResponseData,
   LegalStep,
-  PathInfo,
-  QuestionMeta,
-  QuestionProgress,
-  RecommendedPath,
+  PreQuestion,
   StreamEvent,
   SupplementField,
 } from "@/lib/legal/types";
@@ -45,23 +41,16 @@ const initialState: LegalChatState = {
   greeting: undefined,
 
   // consulting
-  consultationProgress: null,
-  needMoreInfo: false,
-  canProceed: false,
+  canGenerateDocument: false,
+  collectedFacts: null,
 
-  // select_document_path
-  caseInfo: undefined,
-  documentPaths: [],
-  recommendedPath: null,
-  selectedPath: null,
+  // fill_questions
+  fillQuestions: [],
 
-  // ask_question
-  currentQuestion: null,
-  questionProgress: null,
-  requireAttachment: false,
-  attachmentHint: null,
-  factAnalysis: null,
-  pathInfo: null,
+  // pre_questions
+  preQuestions: [],
+  documentTypes: [],
+  templateId: null,
 
   // check_labor_contract
   canSkipContract: false,
@@ -88,22 +77,8 @@ function extractMessageContent(
     case "consulting":
       return data.message || "";
 
-    case "select_document_path":
-      return data.legal_analysis || data.message || "";
-
-    case "path_selected":
-      return data.message || "已确认选择";
-
-    case "ask_question": {
-      // question 可能是字符串或 QuestionMeta 对象
-      if (typeof data.question === "string") {
-        return data.question;
-      }
-      if (data.question && typeof data.question === "object") {
-        return data.question.question || "";
-      }
-      return data.message || "";
-    }
+    case "fill_questions":
+      return data.message || "请补充以下信息";
 
     case "check_labor_contract":
       return data.message || "请确认您是否有劳动合同";
@@ -111,12 +86,56 @@ function extractMessageContent(
     case "supplement_info":
       return data.message || "请补充以下信息";
 
+    case "pre_questions":
+      return data.message || "请填写以下信息以生成文书";
+
+    case "check_info":
+    case "generate_document":
+      return data.message || "";
+
     case "completed":
       return data.content || data.message || "文书已生成完成";
+
+    case "session_closed":
+      return data.message || "会话已结束，感谢您的使用！";
 
     default:
       return data.message || "";
   }
+}
+
+function isUserInteractionStep(step: LegalStep): boolean {
+  return (
+    step === "greeting" ||
+    step === "consulting" ||
+    step === "fill_questions" ||
+    step === "check_labor_contract" ||
+    step === "supplement_info" ||
+    step === "pre_questions" ||
+    step === "completed" ||
+    step === "session_closed"
+  );
+}
+
+/**
+ * 根据后端 next_step 直接构造下一次请求。
+ * 前端只判断该阶段是否需要停下来等待用户输入，不再本地维护 step->action 映射。
+ */
+function resolveAutomaticStageRequest(
+  step: LegalStep
+): Pick<LegalInteractRequest, "action" | "stream"> | null {
+  if (isUserInteractionStep(step)) {
+    return null;
+  }
+
+  return {
+    action: step,
+    stream: step === "generate_document",
+  };
+}
+
+function hasVisibleAssistantMessage(content: string): boolean {
+  return content.trim().length > 0;
 }
 
 /**
@@ -145,61 +164,35 @@ function processStepData(
     case "consulting":
       return {
         ...baseUpdate,
-        consultationProgress: data.consultation_progress || {
-          consultation_count: data.consultation_count || 1,
-          max_consultations: data.max_consultations || 2,
-        },
-        needMoreInfo: data.need_more_info ?? true,
-        canProceed: data.can_proceed ?? false,
+        canGenerateDocument:
+          data.can_generate_document ?? prevState.canGenerateDocument,
+        collectedFacts: data.collected_facts ?? prevState.collectedFacts,
       };
 
-    case "select_document_path":
-      return {
-        ...baseUpdate,
-        caseInfo:
-          data.case_type && data.confidence !== undefined
-            ? {
-                case_type: data.case_type,
-                confidence: data.confidence,
-              }
-            : prevState.caseInfo,
-        documentPaths: data.document_paths || prevState.documentPaths,
-        recommendedPath:
-          (data.recommended_path as RecommendedPath) ||
-          prevState.recommendedPath,
-      };
+    case "fill_questions": {
+      // 后端返回多种格式：
+      // 1. data.fill_questions — FillQuestion[]
+      // 2. data.questions — 通用 questions 数组
+      // 3. data.data.missing_info — 上游格式 {field, label, required}[]
+      let fillQs: FillQuestion[] = [];
 
-    case "path_selected":
-      return {
-        ...baseUpdate,
-        // auto_continue 标记需要在组件层处理自动触发下一步
-      };
-
-    case "ask_question": {
-      // 处理 question 字段，可能是字符串或对象
-      let questionMeta: QuestionMeta | null = null;
-      let progress: QuestionProgress | null = null;
-
-      if (typeof data.question === "object" && data.question !== null) {
-        questionMeta = data.question as QuestionMeta;
-        progress = questionMeta.progress || data.progress || null;
-      } else if (typeof data.question === "string") {
-        questionMeta = {
-          question_id: data.question_id || generateUUID(),
-          question: data.question,
-          progress: data.progress || { current: 0, total: 0 },
-        };
-        progress = data.progress || null;
+      if (data.fill_questions && data.fill_questions.length > 0) {
+        fillQs = data.fill_questions;
+      } else if (data.data?.missing_info && data.data.missing_info.length > 0) {
+        fillQs = data.data.missing_info.map((item) => ({
+          question_id: item.field,
+          element: item.field,
+          question: item.label,
+          placeholder: `请输入${item.label}`,
+          required: item.required ?? true,
+        }));
+      } else if (data.questions) {
+        fillQs = data.questions as unknown as FillQuestion[];
       }
 
       return {
         ...baseUpdate,
-        currentQuestion: questionMeta,
-        questionProgress: progress,
-        requireAttachment: data.require_attachment ?? false,
-        attachmentHint: data.attachment_hint || null,
-        factAnalysis: (data.fact_analysis as FactAnalysis) || null,
-        pathInfo: (data.path_info as PathInfo) || null,
+        fillQuestions: fillQs,
       };
     }
 
@@ -212,7 +205,27 @@ function processStepData(
     case "supplement_info":
       return {
         ...baseUpdate,
+        // supplement_info 可能用 fields 或 questions
         supplementFields: (data.fields as SupplementField[]) || [],
+        fillQuestions:
+          (data.fill_questions as FillQuestion[]) ||
+          (data.questions as unknown as FillQuestion[]) ||
+          prevState.fillQuestions,
+      };
+
+    case "pre_questions":
+      return {
+        ...baseUpdate,
+        preQuestions: (data.questions as PreQuestion[]) || [],
+        // 后端返回 id，前端用 value，做归一化
+        documentTypes: (
+          (data.document_types || []) as unknown as Record<string, string>[]
+        ).map((dt) => ({
+          value: dt.value || dt.id || "",
+          label: dt.label || "",
+          description: dt.description || "",
+        })),
+        templateId: data.template_id || null,
       };
 
     case "completed":
@@ -225,6 +238,9 @@ function processStepData(
           download_url: data.download_url || "",
         },
       };
+
+    case "session_closed":
+      return baseUpdate;
 
     default:
       return baseUpdate;
@@ -279,12 +295,17 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
 
   // 添加用户消息
   const addUserMessage = useCallback(
-    (content: string, attachments?: LegalAttachment[]) => {
+    (
+      content: string,
+      attachments?: LegalAttachment[],
+      formData?: Record<string, unknown>
+    ) => {
       const message: LegalMessage = {
         id: generateUUID(),
         role: "user",
         content,
         attachments,
+        formData,
         created_at: new Date(),
       };
 
@@ -366,12 +387,247 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       });
 
       // 添加助手消息
-      addAssistantMessage(messageContent, next_step, data);
+      if (hasVisibleAssistantMessage(messageContent)) {
+        addAssistantMessage(messageContent, next_step, data);
+      }
 
       // 返回响应数据，供调用方判断是否需要自动继续
       return { next_step, data };
     },
     [addAssistantMessage]
+  );
+
+  // 针对中间阶段执行下一次明确 action，而不是盲目发送 continue
+  const runStageAction = useCallback(
+    async (sessionId: string, step: LegalStep) => {
+      const nextRequest = resolveAutomaticStageRequest(step);
+      if (!nextRequest) {
+        return;
+      }
+
+      setState((prev) => ({ ...prev, isLoading: true }));
+
+      try {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const requestBody: LegalInteractRequest = {
+          session_id: sessionId,
+          ...nextRequest,
+        };
+
+        const response = await postInteract(requestBody, controller.signal);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error((errorData as any).error || "Request failed");
+        }
+
+        const contentType = response.headers.get("content-type");
+
+        if (contentType?.includes("text/event-stream")) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            isStreaming: true,
+          }));
+
+          addAssistantMessage("", step, undefined, true);
+
+          let streamingContent = "";
+          let finalStep: LegalStep | undefined;
+          let finalData: LegalResponseData | undefined;
+          let latestSessionId = sessionId;
+          let doneReceived = false;
+          let fallbackRequested = false;
+          let fallbackMessage: string | undefined;
+
+          await readSSEStreamWithAbort(
+            response,
+            (event: StreamEvent) => {
+              switch (event.type) {
+                case "start":
+                  if (event.session_id) {
+                    latestSessionId = event.session_id;
+                  }
+                  setState((prev) => ({
+                    ...prev,
+                    sessionId: event.session_id || prev.sessionId,
+                  }));
+                  if (event.next_step) {
+                    updateLastAssistantMessage({ step: event.next_step });
+                  }
+                  break;
+
+                case "content":
+                  streamingContent += event.content || "";
+                  updateLastAssistantMessage({
+                    content: streamingContent,
+                  });
+                  break;
+
+                case "done": {
+                  doneReceived = true;
+                  finalStep = event.next_step;
+                  finalData = event.data;
+                  if (event.session_id) {
+                    latestSessionId = event.session_id;
+                  }
+
+                  setState((prev) => {
+                    const stepUpdates = processStepData(
+                      event.next_step || prev.currentStep,
+                      event.data || {},
+                      prev
+                    );
+                    return {
+                      ...prev,
+                      sessionId: event.session_id || prev.sessionId,
+                      isStreaming: false,
+                      ...stepUpdates,
+                    };
+                  });
+
+                  const fallbackContent = extractMessageContent(
+                    event.next_step || "greeting",
+                    event.data || {}
+                  );
+
+                  updateLastAssistantMessage({
+                    content: streamingContent || fallbackContent,
+                    step: event.next_step,
+                    data: event.data,
+                    is_streaming: false,
+                  });
+                  break;
+                }
+
+                case "error":
+                  setState((prev) => ({
+                    ...prev,
+                    isStreaming: false,
+                    error: event.message || "Stream error",
+                  }));
+                  updateLastAssistantMessage({ is_streaming: false });
+                  break;
+
+                case "fallback":
+                  fallbackRequested = true;
+                  fallbackMessage = event.message || "此阶段使用非流式响应";
+                  setState((prev) => ({
+                    ...prev,
+                    isStreaming: false,
+                    isLoading: true,
+                  }));
+                  updateLastAssistantMessage({
+                    content: fallbackMessage,
+                    is_streaming: false,
+                  });
+                  controller.abort();
+                  break;
+
+                default:
+                  break;
+              }
+            },
+            controller.signal
+          );
+
+          if (controller.signal.aborted && !fallbackRequested) {
+            return;
+          }
+
+          if (fallbackRequested) {
+            const retryController = new AbortController();
+            abortControllerRef.current = retryController;
+
+            const retryResponse = await postInteract(
+              {
+                ...requestBody,
+                stream: false,
+              },
+              retryController.signal
+            );
+            if (!retryResponse.ok) {
+              const errorData = await retryResponse.json().catch(() => ({}));
+              throw new Error((errorData as any).error || "Request failed");
+            }
+
+            const retryData: LegalApiResponse = await retryResponse.json();
+            const { session_id, next_step, data: respData } = retryData;
+            const content = extractMessageContent(next_step, respData);
+
+            setState((prev) => {
+              const stepUpdates = processStepData(next_step, respData, prev);
+              return {
+                ...prev,
+                sessionId: session_id || prev.sessionId,
+                isLoading: false,
+                isStreaming: false,
+                ...stepUpdates,
+              };
+            });
+
+            updateLastAssistantMessage({
+              ...(hasVisibleAssistantMessage(content) ? { content } : {}),
+              step: next_step,
+              data: respData,
+              is_streaming: false,
+            });
+
+            const result = { next_step, data: respData };
+            const upcoming = result
+              ? resolveAutomaticStageRequest(result.next_step)
+              : null;
+            if (upcoming) {
+              return runStageAction(
+                retryData.session_id || latestSessionId,
+                result!.next_step
+              );
+            }
+            return result;
+          }
+
+          if (!doneReceived) {
+            setState((prev) => ({
+              ...prev,
+              isStreaming: false,
+              error: prev.error || "Stream ended unexpectedly",
+            }));
+            updateLastAssistantMessage({ is_streaming: false });
+          }
+
+          const upcoming = finalStep
+            ? resolveAutomaticStageRequest(finalStep)
+            : null;
+          if (finalStep && upcoming) {
+            return runStageAction(latestSessionId, finalStep);
+          }
+
+          return { next_step: finalStep, data: finalData };
+        }
+
+        const data: LegalApiResponse = await response.json();
+        const result = handleResponse(data);
+        const upcoming = result
+          ? resolveAutomaticStageRequest(result.next_step)
+          : null;
+        if (result && upcoming) {
+          return runStageAction(data.session_id || sessionId, result.next_step);
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Request failed",
+        }));
+      }
+    },
+    [addAssistantMessage, handleResponse, postInteract, updateLastAssistantMessage]
   );
 
   // 发送消息
@@ -436,6 +692,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
           let streamingContent = "";
           let finalStep: LegalStep | undefined;
           let finalData: LegalResponseData | undefined;
+          let latestSessionId = state.sessionId || "";
           let doneReceived = false;
           let fallbackRequested = false;
           let fallbackMessage: string | undefined;
@@ -445,6 +702,9 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
             (event: StreamEvent) => {
               switch (event.type) {
                 case "start":
+                  if (event.session_id) {
+                    latestSessionId = event.session_id;
+                  }
                   setState((prev) => ({
                     ...prev,
                     sessionId: event.session_id || prev.sessionId,
@@ -465,6 +725,9 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
                   doneReceived = true;
                   finalStep = event.next_step;
                   finalData = event.data;
+                  if (event.session_id) {
+                    latestSessionId = event.session_id;
+                  }
 
                   // 使用统一的状态处理
                   setState((prev) => {
@@ -570,6 +833,11 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
               is_streaming: false,
             });
 
+            // 自动续发
+            const upcoming = resolveAutomaticStageRequest(next_step);
+            if (upcoming) {
+              return runStageAction(data.session_id || state.sessionId || "", next_step);
+            }
             return { next_step, data: respData };
           }
 
@@ -582,12 +850,30 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
             updateLastAssistantMessage({ is_streaming: false });
           }
 
+          // 自动续发
+          const upcoming = finalStep
+            ? resolveAutomaticStageRequest(finalStep)
+            : null;
+          if (finalStep && upcoming) {
+            return runStageAction(latestSessionId, finalStep);
+          }
+
           return { next_step: finalStep, data: finalData };
         }
 
         // 处理非流式响应
         const data: LegalApiResponse = await response.json();
-        return handleResponse(data);
+        const result = handleResponse(data);
+
+        // 自动续发
+        const upcoming = result
+          ? resolveAutomaticStageRequest(result.next_step)
+          : null;
+        if (result && upcoming) {
+          return runStageAction(data.session_id || state.sessionId || "", result.next_step);
+        }
+
+        return result;
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           return;
@@ -609,90 +895,10 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       addAssistantMessage,
       updateLastAssistantMessage,
       handleResponse,
+      runStageAction,
       postInteract,
     ]
   );
-
-  // 选择文档路径
-  const selectPath = useCallback(
-    async (path: DocumentPath) => {
-      // 兼容 name 和 path_name 两种字段名
-      const pathName = path.name || path.path_name || "";
-
-      setState((prev) => ({
-        ...prev,
-        selectedPath: path,
-        isLoading: true,
-        error: null,
-      }));
-
-      // 添加用户选择消息
-      addUserMessage(pathName);
-
-      try {
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-
-        const response = await postInteract(
-          {
-            session_id: state.sessionId || undefined,
-            message: pathName,
-            action: "continue",
-            stream: false,
-          },
-          controller.signal
-        );
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error((errorData as any).error || "Request failed");
-        }
-        const data: LegalApiResponse = await response.json();
-        return handleResponse(data);
-      } catch (error) {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: error instanceof Error ? error.message : "Request failed",
-        }));
-      }
-    },
-    [state.sessionId, handleResponse, addUserMessage, postInteract]
-  );
-
-  // 自动继续（用于 path_selected 等需要自动触发下一步的场景）
-  const autoContinue = useCallback(async () => {
-    setState((prev) => ({
-      ...prev,
-      isLoading: true,
-      error: null,
-    }));
-
-    try {
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      const response = await postInteract(
-        {
-          session_id: state.sessionId || undefined,
-          action: "continue",
-          stream: false,
-        },
-        controller.signal
-      );
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error((errorData as any).error || "Request failed");
-      }
-      const data: LegalApiResponse = await response.json();
-      return handleResponse(data);
-    } catch (error) {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : "Request failed",
-      }));
-    }
-  }, [state.sessionId, handleResponse, postInteract]);
 
   // 跳过劳动合同检查
   const skipContractCheck = useCallback(async () => {
@@ -721,7 +927,14 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         throw new Error((errorData as any).error || "Request failed");
       }
       const data: LegalApiResponse = await response.json();
-      return handleResponse(data);
+      const result = handleResponse(data);
+      const upcoming = result
+        ? resolveAutomaticStageRequest(result.next_step)
+        : null;
+      if (result && upcoming) {
+        return runStageAction(data.session_id || state.sessionId || "", result.next_step);
+      }
+      return result;
     } catch (error) {
       setState((prev) => ({
         ...prev,
@@ -729,18 +942,40 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         error: error instanceof Error ? error.message : "Request failed",
       }));
     }
-  }, [state.sessionId, handleResponse, addUserMessage, postInteract]);
+  }, [
+    state.sessionId,
+    handleResponse,
+    runStageAction,
+    addUserMessage,
+    postInteract,
+  ]);
 
-  // 提交补充信息
+  // 提交补充信息（supplement_info 阶段）
   const submitSupplementInfo = useCallback(
-    async (fieldValues: Record<string, string>) => {
+    async (fields: SupplementField[], fieldValues: Record<string, string>) => {
       setState((prev) => ({
         ...prev,
         isLoading: true,
         error: null,
       }));
 
-      addUserMessage("【提交信息】");
+      // 构建可读摘要
+      const summary = fields
+        .map((f) => `${f.label}：${fieldValues[f.field_id] || ""}`)
+        .join("\n");
+
+      addUserMessage(summary, undefined, {
+        type: "supplement_info",
+        fields,
+        values: fieldValues,
+      });
+
+      // 构建 answers 数组格式
+      const answers = fields.map((f) => ({
+        question_id: f.field_id,
+        element: f.label,
+        answer: fieldValues[f.field_id] || "",
+      }));
 
       try {
         const controller = new AbortController();
@@ -750,7 +985,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
           {
             session_id: state.sessionId || undefined,
             action: "submit_answers",
-            data: fieldValues,
+            data: { answers },
             stream: false,
           },
           controller.signal
@@ -760,7 +995,17 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
           throw new Error((errorData as any).error || "Request failed");
         }
         const data: LegalApiResponse = await response.json();
-        return handleResponse(data);
+        const result = handleResponse(data);
+        const upcoming = result
+          ? resolveAutomaticStageRequest(result.next_step)
+          : null;
+        if (result && upcoming) {
+          return runStageAction(
+            data.session_id || state.sessionId || "",
+            result.next_step
+          );
+        }
+        return result;
       } catch (error) {
         setState((prev) => ({
           ...prev,
@@ -769,8 +1014,268 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         }));
       }
     },
-    [state.sessionId, handleResponse, addUserMessage, postInteract]
+    [
+      state.sessionId,
+      handleResponse,
+      runStageAction,
+      addUserMessage,
+      postInteract,
+    ]
   );
+
+  // 触发生成文书（从 consulting 进入 pre_questions）
+  const generateDocument = useCallback(async () => {
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+    }));
+
+    addUserMessage("【生成文书】");
+
+    try {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const response = await postInteract(
+        {
+          session_id: state.sessionId || undefined,
+          action: "pre_generate_document",
+          stream: false,
+        },
+        controller.signal
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error((errorData as any).error || "Request failed");
+      }
+      const data: LegalApiResponse = await response.json();
+      const result = handleResponse(data);
+      const upcoming = result
+        ? resolveAutomaticStageRequest(result.next_step)
+        : null;
+      if (result && upcoming) {
+        return runStageAction(data.session_id || state.sessionId || "", result.next_step);
+      }
+      return result;
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Request failed",
+      }));
+    }
+  }, [
+    state.sessionId,
+    handleResponse,
+    runStageAction,
+    addUserMessage,
+    postInteract,
+  ]);
+
+  // 提交填充问题（fill_questions 阶段）
+  const submitFillQuestions = useCallback(
+    async (questions: FillQuestion[], values: Record<string, string>) => {
+      setState((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: null,
+      }));
+
+      // 可读摘要
+      const summary = questions
+        .map((q) => `${q.question}：${values[q.question_id] || ""}`)
+        .join("\n");
+
+      addUserMessage(summary, undefined, {
+        type: "fill_questions",
+        questions,
+        values,
+      });
+
+      // 构建后端期望的 answers 数组
+      const answers = questions.map((q) => ({
+        question_id: q.question_id,
+        element: q.element || "",
+        answer: values[q.question_id] || "",
+      }));
+
+      try {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const response = await postInteract(
+          {
+            session_id: state.sessionId || undefined,
+            action: "submit_answers",
+            data: { answers },
+            stream: false,
+          },
+          controller.signal
+        );
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error((errorData as any).error || "Request failed");
+        }
+        const data: LegalApiResponse = await response.json();
+        const result = handleResponse(data);
+        const upcoming = result
+          ? resolveAutomaticStageRequest(result.next_step)
+          : null;
+        if (result && upcoming) {
+          return runStageAction(
+            data.session_id || state.sessionId || "",
+            result.next_step
+          );
+        }
+        return result;
+      } catch (error) {
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Request failed",
+        }));
+      }
+    },
+    [
+      state.sessionId,
+      handleResponse,
+      runStageAction,
+      addUserMessage,
+      postInteract,
+    ]
+  );
+
+  // 提交问卷答案（pre_questions 阶段，非流式）
+  const submitPreQuestions = useCallback(
+    async (
+      templateId: string,
+      answers: Record<string, string>,
+      questions: PreQuestion[],
+      selectedType: string,
+      selectedTypeLabel: string
+    ) => {
+      setState((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: null,
+      }));
+
+      // 可读摘要
+      const lines = questions.map((q) => {
+        const val = answers[q.question_id];
+        const label =
+          q.options.find((o) => o.value === val)?.label || val || "";
+        return `${q.question}：${label}`;
+      });
+      const summary = `文书类型：${selectedTypeLabel}\n${lines.join("\n")}`;
+
+      addUserMessage(summary, undefined, {
+        type: "pre_questions",
+        questions,
+        answers,
+        selectedType,
+        selectedTypeLabel,
+      });
+
+      // 构建后端期望的 answers 数组（带 answer_label）
+      const answersArray = Object.entries(answers).map(([qid, val]) => ({
+        question_id: qid,
+        element: "",
+        answer: val,
+        answer_label:
+          questions
+            .find((q) => q.question_id === qid)
+            ?.options.find((o) => o.value === val)?.label || "",
+      }));
+
+      try {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const response = await postInteract(
+          {
+            session_id: state.sessionId || undefined,
+            action: "submit_pre_questions",
+            data: {
+              answers: answersArray,
+              template_id: String(templateId),
+              selected_type: selectedType,
+              selected_type_label: selectedTypeLabel,
+            },
+            stream: false,
+          },
+          controller.signal
+        );
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error((errorData as any).error || "Request failed");
+        }
+        const data: LegalApiResponse = await response.json();
+        const result = handleResponse(data);
+        const upcoming = result
+          ? resolveAutomaticStageRequest(result.next_step)
+          : null;
+        if (result && upcoming) {
+          return runStageAction(
+            data.session_id || state.sessionId || "",
+            result.next_step
+          );
+        }
+        return result;
+      } catch (error) {
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Request failed",
+        }));
+      }
+    },
+    [
+      state.sessionId,
+      handleResponse,
+      runStageAction,
+      addUserMessage,
+      postInteract,
+    ]
+  );
+
+  // 关闭会话
+  const closeSession = useCallback(async () => {
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+    }));
+
+    addUserMessage("【结束会话】");
+
+    try {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const response = await postInteract(
+        {
+          session_id: state.sessionId || undefined,
+          action: "close",
+          stream: false,
+        },
+        controller.signal
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error((errorData as any).error || "Request failed");
+      }
+      const data: LegalApiResponse = await response.json();
+      return handleResponse(data);
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Request failed",
+      }));
+    }
+  }, [state.sessionId, handleResponse, addUserMessage, postInteract]);
 
   // 停止流
   const stopStream = useCallback(() => {
@@ -889,10 +1394,12 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
 
     // 方法
     sendMessage,
-    selectPath,
-    autoContinue,
     skipContractCheck,
+    submitFillQuestions,
     submitSupplementInfo,
+    generateDocument,
+    submitPreQuestions,
+    closeSession,
     stopStream,
     reset,
     initSession,

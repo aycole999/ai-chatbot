@@ -8,12 +8,9 @@
 import { useState } from "react";
 
 import type {
-  ConsultationProgress,
-  DocumentPath,
-  FactAnalysis,
-  QuestionMeta,
-  QuestionProgress,
-  RecommendedPath,
+  DocumentTypeOption,
+  FillQuestion,
+  PreQuestion,
   SupplementField,
 } from "@/lib/legal/types";
 import { cn } from "@/lib/utils";
@@ -22,214 +19,27 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
 // ============================================================
-// 案由信息卡片 (select_document_path 阶段)
+// 文书类型自动推荐策略
 // ============================================================
-interface CaseInfoCardProps {
-  caseType: string;
-  confidence: number;
-}
+function inferDocumentType(answers: Record<string, string>): string {
+  const q1 = answers.q1 || "";
+  const q2 = answers.q2 || "";
+  const q3 = answers.q3 || "";
+  const q4 = answers.q4 || "";
 
-export function CaseInfoCard({ caseType, confidence }: CaseInfoCardProps) {
-  const confidencePercent = Math.round(confidence * 100);
-  const confidenceColor =
-    confidencePercent >= 80
-      ? "text-green-600"
-      : confidencePercent >= 60
-        ? "text-yellow-600"
-        : "text-red-600";
-
-  return (
-    <div className="rounded-lg border bg-blue-50 p-4 dark:bg-blue-950/30">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-medium text-blue-800 text-sm dark:text-blue-200">
-            案由识别结果
-          </div>
-          <div className="mt-1 font-semibold text-blue-900 text-lg dark:text-blue-100">
-            {caseType}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-muted-foreground text-xs">置信度</div>
-          <div className={cn("font-bold text-xl", confidenceColor)}>
-            {confidencePercent}%
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// 文书路径选择器 (select_document_path 阶段)
-// ============================================================
-interface DocumentPathSelectorProps {
-  paths: DocumentPath[];
-  recommendedPath?: RecommendedPath | null;
-  isLoading?: boolean;
-  onSelect: (path: DocumentPath) => void;
-}
-
-export function DocumentPathSelector({
-  paths,
-  recommendedPath,
-  isLoading,
-  onSelect,
-}: DocumentPathSelectorProps) {
-  return (
-    <div className="space-y-3">
-      <div className="font-medium text-sm">请选择文书类型：</div>
-      <div className="grid gap-3">
-        {paths.map((path) => {
-          // 兼容 id/path_id 和 name/path_name 两种字段名
-          const pathId = path.id || path.path_id || "";
-          const pathName = path.name || path.path_name || "";
-          const isRecommended = recommendedPath?.id === pathId;
-          return (
-            <button
-              className={cn(
-                "group relative w-full rounded-lg border p-4 text-left transition-all hover:border-primary hover:shadow-md",
-                isRecommended && "border-primary bg-primary/5",
-                isLoading && "pointer-events-none opacity-50"
-              )}
-              disabled={isLoading}
-              key={pathId}
-              onClick={() => onSelect(path)}
-              type="button"
-            >
-              {isRecommended && (
-                <span className="-top-2 absolute right-2 rounded-full bg-primary px-2 py-0.5 text-primary-foreground text-xs">
-                  推荐
-                </span>
-              )}
-              <div className="font-medium">{pathName}</div>
-              <div className="mt-1 text-muted-foreground text-sm">
-                {path.description}
-              </div>
-              {isRecommended && recommendedPath?.reason && (
-                <div className="mt-2 border-primary/20 border-t pt-2 text-primary text-xs">
-                  {recommendedPath.reason}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// 咨询进度指示器 (consulting 阶段)
-// ============================================================
-interface ConsultationProgressProps {
-  progress: ConsultationProgress;
-  needMoreInfo?: boolean;
-  canProceed?: boolean;
-}
-
-export function ConsultationProgressIndicator({
-  progress,
-  needMoreInfo,
-  canProceed,
-}: ConsultationProgressProps) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">咨询进度</span>
-        <span className="font-medium">
-          {progress.consultation_count} / {progress.max_consultations}
-        </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full bg-primary transition-all"
-          style={{
-            width: `${(progress.consultation_count / progress.max_consultations) * 100}%`,
-          }}
-        />
-      </div>
-      {needMoreInfo && (
-        <div className="text-muted-foreground text-xs">
-          请补充更多信息以便更好地分析您的情况
-        </div>
-      )}
-      {canProceed && (
-        <div className="text-green-600 text-xs">
-          信息已充分，可以继续进入下一步
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// 问题卡片 (ask_question 阶段)
-// ============================================================
-interface QuestionCardProps {
-  question: QuestionMeta;
-  progress?: QuestionProgress | null;
-  requireAttachment?: boolean;
-  attachmentHint?: string | null;
-  factAnalysis?: FactAnalysis | null;
-}
-
-export function QuestionCard({
-  question,
-  progress,
-  requireAttachment,
-  attachmentHint,
-  factAnalysis,
-}: QuestionCardProps) {
-  const questionProgress = progress || question.progress;
-
-  return (
-    <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-      {/* 进度指示 */}
-      {questionProgress && questionProgress.total > 0 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">问题进度</span>
-          <span className="font-medium">
-            {questionProgress.current} / {questionProgress.total}
-          </span>
-        </div>
-      )}
-
-      {/* 问题内容 */}
-      <div className="font-medium">{question.question}</div>
-
-      {/* 事实分析 */}
-      {factAnalysis && (
-        <div className="space-y-2 border-muted border-t pt-3">
-          <div className="font-medium text-muted-foreground text-xs">
-            已提取信息
-          </div>
-          <div className="text-sm">{factAnalysis.summary}</div>
-          {factAnalysis.extracted_facts.length > 0 && (
-            <ul className="list-inside list-disc text-muted-foreground text-xs">
-              {factAnalysis.extracted_facts.map((fact) => (
-                <li key={fact}>{fact}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {/* 附件提示 */}
-      {attachmentHint && (
-        <div
-          className={cn(
-            "rounded-md px-3 py-2 text-xs",
-            requireAttachment
-              ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400"
-              : "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
-          )}
-        >
-          {attachmentHint}
-        </div>
-      )}
-    </div>
-  );
+  if (q1 === "yes" && q2 === "secondary" && q4 === "unstable") {
+    return "payment_order";
+  }
+  if (q1 === "no" && q3 === "urgent") {
+    return "reconciliation_letter";
+  }
+  if (q1 === "yes" && q2 === "secondary" && q4 === "stable") {
+    return "complaint_letter";
+  }
+  if (q2 === "priority") {
+    return "labor_arbitration";
+  }
+  return "labor_arbitration";
 }
 
 // ============================================================
@@ -279,12 +89,67 @@ export function LaborContractCheck({
 }
 
 // ============================================================
-// 补充信息表单 (supplement_info 阶段)
+// 填充问题表单 (fill_questions / supplement_info 阶段)
+// ============================================================
+interface FillQuestionsFormProps {
+  questions: FillQuestion[];
+  isLoading?: boolean;
+  onSubmit: (questions: FillQuestion[], values: Record<string, string>) => void;
+}
+
+export function FillQuestionsForm({
+  questions,
+  isLoading,
+  onSubmit,
+}: FillQuestionsFormProps) {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  const handleChange = (questionId: string, value: string) => {
+    setValues((prev) => ({ ...prev, [questionId]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(questions, values);
+  };
+
+  const isValid = questions
+    .filter((q) => q.required)
+    .every((q) => values[q.question_id]?.trim());
+
+  return (
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      {questions.map((q) => (
+        <div className="space-y-1.5" key={q.question_id}>
+          <label className="font-medium text-sm" htmlFor={q.question_id}>
+            {q.question}
+            {q.required && <span className="text-red-500"> *</span>}
+          </label>
+          <Input
+            disabled={isLoading}
+            id={q.question_id}
+            onChange={(e) => handleChange(q.question_id, e.target.value)}
+            placeholder={q.placeholder || "请输入"}
+            required={q.required}
+            value={values[q.question_id] || ""}
+          />
+        </div>
+      ))}
+
+      <Button className="w-full" disabled={isLoading || !isValid} type="submit">
+        {isLoading ? "提交中..." : "提交信息"}
+      </Button>
+    </form>
+  );
+}
+
+// ============================================================
+// 补充信息表单 (supplement_info 阶段 - SupplementField 格式)
 // ============================================================
 interface SupplementFormProps {
   fields: SupplementField[];
   isLoading?: boolean;
-  onSubmit: (values: Record<string, string>) => void;
+  onSubmit: (fields: SupplementField[], values: Record<string, string>) => void;
 }
 
 export function SupplementForm({
@@ -300,7 +165,7 @@ export function SupplementForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(values);
+    onSubmit(fields, values);
   };
 
   const isValid = fields
@@ -369,14 +234,18 @@ interface CompletedDocumentProps {
   docType: string;
   content: string;
   downloadUrl?: string;
+  isLoading?: boolean;
   onReset: () => void;
+  onClose?: () => void;
 }
 
 export function CompletedDocument({
   docType,
   content,
   downloadUrl,
+  isLoading,
   onReset,
+  onClose,
 }: CompletedDocumentProps) {
   return (
     <div className="space-y-4">
@@ -405,48 +274,257 @@ export function CompletedDocument({
         <Button className="flex-1" onClick={onReset} variant="outline">
           开始新的咨询
         </Button>
+        {onClose && (
+          <Button
+            className="flex-1"
+            disabled={isLoading}
+            onClick={onClose}
+            variant="ghost"
+          >
+            结束会话
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
 // ============================================================
-// 路径已选择确认 (path_selected 阶段)
+// 问卷表单 (pre_questions 阶段)
 // ============================================================
-interface PathSelectedConfirmProps {
-  message: string;
-  autoCountdown?: number;
+interface PreQuestionsFormProps {
+  questions: PreQuestion[];
+  documentTypes: DocumentTypeOption[];
+  templateId: string;
+  isLoading?: boolean;
+  onSubmit: (
+    templateId: string,
+    answers: Record<string, string>,
+    questions: PreQuestion[],
+    selectedType: string,
+    selectedTypeLabel: string
+  ) => void;
 }
 
-export function PathSelectedConfirm({
-  message,
-  autoCountdown,
-}: PathSelectedConfirmProps) {
+export function PreQuestionsForm({
+  questions,
+  documentTypes,
+  templateId,
+  isLoading,
+  onSubmit,
+}: PreQuestionsFormProps) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [selectedDocType, setSelectedDocType] = useState<string>("");
+
+  const handleAnswer = (questionId: string, value: string) => {
+    const next = { ...answers, [questionId]: value };
+    setAnswers(next);
+    // 根据答案自动推荐文书类型
+    const inferred = inferDocumentType(next);
+    if (documentTypes.some((dt) => dt.value === inferred)) {
+      setSelectedDocType(inferred);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedDocType) {
+      const dtLabel =
+        documentTypes.find((dt) => dt.value === selectedDocType)?.label || "";
+      onSubmit(templateId, answers, questions, selectedDocType, dtLabel);
+    }
+  };
+
+  const requiredAnswered = questions
+    .filter((q) => q.required)
+    .every((q) => answers[q.question_id]);
+  const isValid = requiredAnswered && selectedDocType !== "";
+  const inferredType = inferDocumentType(answers);
+
   return (
-    <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950/30">
-      <div className="flex items-center gap-2">
-        <svg
-          className="size-5 text-green-600"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            d="M5 13l4 4L19 7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-          />
-        </svg>
-        <span className="font-medium text-green-700 dark:text-green-400">
-          {message}
-        </span>
+    <form className="space-y-6" onSubmit={handleSubmit}>
+      {/* 问题列表 */}
+      <div className="space-y-4">
+        {questions.map((q) => (
+          <div
+            className="space-y-2 rounded-lg border bg-muted/30 p-4"
+            key={q.question_id}
+          >
+            <div className="font-medium text-sm">
+              {q.question}
+              {q.required && <span className="text-red-500"> *</span>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {q.options.map((opt) => (
+                <button
+                  className={cn(
+                    "rounded-md border px-3 py-1.5 text-sm transition-all",
+                    answers[q.question_id] === opt.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:border-primary/50"
+                  )}
+                  disabled={isLoading}
+                  key={opt.value}
+                  onClick={() => handleAnswer(q.question_id, opt.value)}
+                  type="button"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
-      {autoCountdown !== undefined && autoCountdown > 0 && (
-        <div className="mt-2 text-green-600 text-sm">
-          {autoCountdown} 秒后自动进入下一步...
+
+      {/* 文书类型选择 */}
+      {documentTypes.length > 0 && (
+        <div className="space-y-3">
+          <div className="font-medium text-sm">
+            请选择文书类型 <span className="text-red-500">*</span>
+          </div>
+          <div className="grid gap-3">
+            {documentTypes.map((dt) => (
+              <button
+                className={cn(
+                  "relative w-full rounded-lg border p-3 text-left transition-all",
+                  selectedDocType === dt.value
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : "hover:border-primary/50"
+                )}
+                disabled={isLoading}
+                key={dt.value}
+                onClick={() => setSelectedDocType(dt.value)}
+                type="button"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">{dt.label}</span>
+                  {inferredType === dt.value && requiredAnswered && (
+                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-600 text-xs dark:bg-blue-950/50 dark:text-blue-400">
+                      推荐
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5 text-muted-foreground text-xs">
+                  {dt.description}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
+
+      <Button className="w-full" disabled={isLoading || !isValid} type="submit">
+        {isLoading ? "提交中..." : "确认提交"}
+      </Button>
+    </form>
+  );
+}
+
+// ============================================================
+// 已提交问卷（只读，pre_questions 阶段）
+// ============================================================
+interface PreQuestionsSubmittedProps {
+  questions: PreQuestion[];
+  answers: Record<string, string>;
+  selectedTypeLabel: string;
+}
+
+export function PreQuestionsSubmitted({
+  questions,
+  answers,
+  selectedTypeLabel,
+}: PreQuestionsSubmittedProps) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+      {questions.map((q) => {
+        const selected = answers[q.question_id];
+        const label =
+          q.options.find((o) => o.value === selected)?.label || selected || "—";
+        return (
+          <div key={q.question_id}>
+            <div className="text-muted-foreground text-xs">{q.question}</div>
+            <div className="font-medium text-sm">{label}</div>
+          </div>
+        );
+      })}
+      <div className="border-t pt-2">
+        <div className="text-muted-foreground text-xs">文书类型</div>
+        <div className="font-medium text-sm">{selectedTypeLabel}</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 已提交填充问题（只读，fill_questions 阶段）
+// ============================================================
+interface FillQuestionsSubmittedProps {
+  questions: FillQuestion[];
+  values: Record<string, string>;
+}
+
+export function FillQuestionsSubmitted({
+  questions,
+  values,
+}: FillQuestionsSubmittedProps) {
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
+      {questions.map((q) => (
+        <div key={q.question_id}>
+          <div className="text-muted-foreground text-xs">{q.question}</div>
+          <div className="font-medium text-sm">
+            {values[q.question_id] || "—"}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// 已提交补充信息（只读，supplement_info 阶段）
+// ============================================================
+interface SupplementSubmittedProps {
+  fields: SupplementField[];
+  values: Record<string, string>;
+}
+
+export function SupplementSubmitted({
+  fields,
+  values,
+}: SupplementSubmittedProps) {
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
+      {fields.map((f) => (
+        <div key={f.field_id}>
+          <div className="text-muted-foreground text-xs">{f.label}</div>
+          <div className="font-medium text-sm">{values[f.field_id] || "—"}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// 会话结束提示 (session_closed 阶段)
+// ============================================================
+interface SessionClosedBannerProps {
+  message?: string;
+  onReset: () => void;
+}
+
+export function SessionClosedBanner({
+  message,
+  onReset,
+}: SessionClosedBannerProps) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/30 p-4 text-center">
+      <div className="text-muted-foreground text-sm">
+        {message || "会话已结束，感谢您的使用！"}
+      </div>
+      <Button onClick={onReset} variant="outline">
+        开始新的咨询
+      </Button>
     </div>
   );
 }

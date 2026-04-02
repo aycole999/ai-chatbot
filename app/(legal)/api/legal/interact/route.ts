@@ -18,7 +18,8 @@ const requestSchema = z.object({
   media_attachments: z
     .array(
       z.object({
-        oss_id: z.number(),
+        // OSS ID 是 64 位整型，前端按字符串传递以避免 JS 精度丢失。
+        oss_id: z.union([z.string().min(1), z.number()]).transform(String),
         file_name: z.string().optional(),
         file_size: z.number().optional(),
         content_type: z.string().optional(),

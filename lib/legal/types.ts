@@ -7,36 +7,38 @@
 export type LegalStep =
   | "greeting"
   | "consulting"
-  | "select_document_path"
-  | "path_selected"
-  | "ask_question"
+  | "check_info"
+  | "fill_questions"
   | "check_labor_contract"
   | "supplement_info"
-  | "completed";
+  | "pre_questions"
+  | "generate_document"
+  | "completed"
+  | "session_closed";
 
-// 文档路径定义（后端返回 id/name，兼容 path_id/path_name）
-export interface DocumentPath {
-  id?: string;
-  path_id?: string;
-  name?: string;
-  path_name?: string;
-  description: string;
-  is_recommended?: boolean;
-}
-
-// 问题进度
-export interface QuestionProgress {
-  current: number;
-  total: number;
-}
-
-// 问题元数据
-export interface QuestionMeta {
+// 问卷问题（pre_questions 阶段）
+export interface PreQuestion {
   question_id: string;
   question: string;
-  progress: QuestionProgress;
-  fact_analysis?: string;
-  attachment_hint?: string;
+  options: { value: string; label: string }[];
+  required: boolean;
+}
+
+// 文书类型选项（pre_questions 阶段）
+export interface DocumentTypeOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+// 填充问题（fill_questions 阶段，文本输入）
+export interface FillQuestion {
+  question_id: string;
+  element: string;
+  question: string;
+  placeholder?: string;
+  required: boolean;
+  suggestions?: string[];
 }
 
 // 附件分析结果
@@ -50,31 +52,13 @@ export interface AttachmentAnalysis {
   duplicate_message?: string;
 }
 
-// 咨询进度
-export interface ConsultationProgress {
-  consultation_count: number;
-  max_consultations: number;
-}
-
-// 路径信息（问答阶段）
-export interface PathInfo {
-  path_id: number;
-  description: string;
-  switched_path: boolean;
-}
-
-// 事实分析结果
-export interface FactAnalysis {
-  summary: string;
-  extracted_facts: string[];
-  legal_basis: string[];
-}
-
-// 推荐路径
-export interface RecommendedPath {
-  id: string;
-  name: string;
-  reason: string;
+// 上游透传的嵌套数据（check_info / fill_questions 等阶段）
+export interface UpstreamNestedData {
+  missing_info?: Array<{ field: string; label: string; required: boolean }>;
+  collected_info?: Record<string, string>;
+  completion_rate?: number;
+  selected_name?: string;
+  selected_type?: string;
 }
 
 // 后端响应数据
@@ -83,36 +67,25 @@ export interface LegalResponseData {
   message?: string;
   prompt?: string;
 
+  // 上游透传嵌套数据和可用操作
+  data?: UpstreamNestedData;
+  actions?: string[];
+
   // greeting 阶段
   // - message, prompt
 
   // consulting 阶段
-  need_more_info?: boolean;
-  can_proceed?: boolean;
-  consultation_count?: number;
-  max_consultations?: number;
-  consultation_progress?: ConsultationProgress;
+  can_generate_document?: boolean;
+  collected_facts?: Record<string, string>;
   attachment_analysis?: AttachmentAnalysis[];
 
-  // select_document_path 阶段
-  case_type?: string;
-  confidence?: number;
-  legal_analysis?: string;
-  document_paths?: DocumentPath[];
-  recommended_path?: RecommendedPath;
+  // fill_questions 阶段（后端 fill_questions 和 supplement_info 都用 questions 字段）
+  fill_questions?: FillQuestion[];
 
-  // path_selected 阶段
-  auto_continue?: boolean;
-
-  // ask_question 阶段
-  question_id?: string;
-  question?: string | QuestionMeta;
-  current_element?: string;
-  progress?: QuestionProgress;
-  require_attachment?: boolean;
-  attachment_hint?: string;
-  path_info?: PathInfo;
-  fact_analysis?: FactAnalysis;
+  // pre_questions 阶段
+  questions?: PreQuestion[];
+  document_types?: DocumentTypeOption[];
+  template_id?: string;
 
   // check_labor_contract 阶段
   can_skip?: boolean;
@@ -214,7 +187,7 @@ export interface EmbedSessionInfo {
 
 // App 侧媒体附件（通过 ossId 引用；后端负责 textract 与落库）
 export interface LegalMediaAttachment {
-  oss_id: number;
+  oss_id: string;
   file_name?: string;
   file_size?: number;
   content_type?: string;
@@ -223,7 +196,7 @@ export interface LegalMediaAttachment {
 
 // UI 附件信息（用于预览/发送）
 export interface LegalAttachment {
-  oss_id: number;
+  oss_id: string;
   file_url?: string; // 上传后返回的 URL
   local_url?: string; // 本地预览 URL（Object URL）
   file_name: string;
@@ -244,6 +217,8 @@ export interface LegalMessage {
   attachments?: LegalAttachment[];
   is_streaming?: boolean;
   created_at: Date;
+  // 提交表单后的持久化数据（用于只读渲染）
+  formData?: Record<string, unknown>;
 }
 
 // API 请求体
@@ -253,10 +228,12 @@ export interface LegalInteractRequest {
   stream?: boolean;
   action?:
     | "continue"
+    | "check_info"
     | "skip"
     | "submit_answers"
     | "submit_pre_questions"
     | "pre_generate_document"
+    | "generate_document"
     | "close"
     | string;
   data?: Record<string, unknown>;
@@ -283,26 +260,16 @@ export interface LegalChatState {
   };
 
   // consulting 阶段
-  consultationProgress: ConsultationProgress | null;
-  needMoreInfo: boolean;
-  canProceed: boolean;
+  canGenerateDocument: boolean;
+  collectedFacts: Record<string, string> | null;
 
-  // select_document_path 阶段
-  caseInfo?: {
-    case_type: string;
-    confidence: number;
-  };
-  documentPaths: DocumentPath[];
-  recommendedPath: RecommendedPath | null;
-  selectedPath: DocumentPath | null;
+  // pre_questions 阶段
+  preQuestions: PreQuestion[];
+  documentTypes: DocumentTypeOption[];
+  templateId: string | null;
 
-  // ask_question 阶段
-  currentQuestion: QuestionMeta | null;
-  questionProgress: QuestionProgress | null;
-  requireAttachment: boolean;
-  attachmentHint: string | null;
-  factAnalysis: FactAnalysis | null;
-  pathInfo: PathInfo | null;
+  // fill_questions 阶段
+  fillQuestions: FillQuestion[];
 
   // check_labor_contract 阶段
   canSkipContract: boolean;
