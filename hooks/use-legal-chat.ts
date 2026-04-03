@@ -8,6 +8,7 @@ import type {
   LegalApiResponse,
   LegalAttachment,
   LegalChatState,
+  LegalFormMessageData,
   LegalInteractRequest,
   LegalMessage,
   LegalResponseData,
@@ -17,12 +18,6 @@ import type {
   SupplementField,
 } from "@/lib/legal/types";
 import { generateUUID } from "@/lib/utils";
-
-// Hook 配置选项
-export interface UseLegalChatOptions {
-  /** 是否启用流式响应，默认 true */
-  enableStreaming?: boolean;
-}
 
 // 初始状态
 const initialState: LegalChatState = {
@@ -138,6 +133,36 @@ function hasVisibleAssistantMessage(content: string): boolean {
   return content.trim().length > 0;
 }
 
+function normalizeDocumentTitle(value?: string): string {
+  return value
+    ?.replace(/^#+\s*/g, "")
+    .replace(/^\*+\s*/g, "")
+    .replace(/\*+$/g, "")
+    .trim() || "";
+}
+
+function normalizeCompletedDownloadUrl(
+  downloadUrl?: string,
+  documentId?: string
+): string {
+  if (downloadUrl?.startsWith("/document/download/")) {
+    return downloadUrl.replace(
+      "/document/download/",
+      "/api/document/download/"
+    );
+  }
+
+  if (downloadUrl?.trim()) {
+    return downloadUrl;
+  }
+
+  if (documentId) {
+    return `/api/document/download/${encodeURIComponent(documentId)}`;
+  }
+
+  return "";
+}
+
 /**
  * 根据 next_step 处理状态更新
  * 每个阶段有独立的状态处理逻辑
@@ -164,9 +189,8 @@ function processStepData(
     case "consulting":
       return {
         ...baseUpdate,
-        canGenerateDocument:
-          data.can_generate_document ?? prevState.canGenerateDocument,
-        collectedFacts: data.collected_facts ?? prevState.collectedFacts,
+        canGenerateDocument: Boolean(data.data?.can_generate_document),
+        collectedFacts: data.data?.collected_facts ?? null,
       };
 
     case "fill_questions": {
@@ -233,9 +257,19 @@ function processStepData(
         ...baseUpdate,
         completedDocument: {
           document_id: data.document_id || "",
-          doc_type: data.doc_type || "",
-          content: data.content || data.document_content || "",
-          download_url: data.download_url || "",
+          doc_type:
+            normalizeDocumentTitle(data.data?.document?.name) ||
+            normalizeDocumentTitle(data.doc_type) ||
+            "",
+          content:
+            data.data?.document?.content ||
+            data.content ||
+            data.document_content ||
+            "",
+          download_url: normalizeCompletedDownloadUrl(
+            data.download_url,
+            data.document_id
+          ),
         },
       };
 
@@ -247,11 +281,8 @@ function processStepData(
   }
 }
 
-export function useLegalChat(options: UseLegalChatOptions = {}) {
-  const { enableStreaming = true } = options;
-
+export function useLegalChat() {
   const [state, setState] = useState<LegalChatState>(initialState);
-  const [streamingEnabled, setStreamingEnabled] = useState(enableStreaming);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const postInteract = useCallback(
@@ -295,17 +326,13 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
 
   // 添加用户消息
   const addUserMessage = useCallback(
-    (
-      content: string,
-      attachments?: LegalAttachment[],
-      formData?: Record<string, unknown>
-    ) => {
+    (content: string, attachments?: LegalAttachment[]) => {
       const message: LegalMessage = {
         id: generateUUID(),
         role: "user",
+        type: "text",
         content,
         attachments,
-        formData,
         created_at: new Date(),
       };
 
@@ -319,6 +346,24 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
     []
   );
 
+  const addUserFormMessage = useCallback((formData: LegalFormMessageData) => {
+    const message: LegalMessage = {
+      id: generateUUID(),
+      role: "user",
+      type: "form_submission",
+      content: "",
+      formData,
+      created_at: new Date(),
+    };
+
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, message],
+    }));
+
+    return message;
+  }, []);
+
   // 添加助手消息
   const addAssistantMessage = useCallback(
     (
@@ -330,6 +375,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       const message: LegalMessage = {
         id: generateUUID(),
         role: "assistant",
+        type: "text",
         content,
         step,
         data,
@@ -666,7 +712,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
             file_size: a.file_size,
             content_type: a.content_type,
           })),
-          stream: streamingEnabled,
+          stream: true,
         };
 
         const response = await postInteract(requestBody, signal);
@@ -890,7 +936,6 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
     [
       state.sessionId,
       state.currentStep,
-      streamingEnabled,
       addUserMessage,
       addAssistantMessage,
       updateLastAssistantMessage,
@@ -959,12 +1004,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         error: null,
       }));
 
-      // 构建可读摘要
-      const summary = fields
-        .map((f) => `${f.label}：${fieldValues[f.field_id] || ""}`)
-        .join("\n");
-
-      addUserMessage(summary, undefined, {
+      addUserFormMessage({
         type: "supplement_info",
         fields,
         values: fieldValues,
@@ -1018,7 +1058,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       state.sessionId,
       handleResponse,
       runStageAction,
-      addUserMessage,
+      addUserFormMessage,
       postInteract,
     ]
   );
@@ -1082,12 +1122,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         error: null,
       }));
 
-      // 可读摘要
-      const summary = questions
-        .map((q) => `${q.question}：${values[q.question_id] || ""}`)
-        .join("\n");
-
-      addUserMessage(summary, undefined, {
+      addUserFormMessage({
         type: "fill_questions",
         questions,
         values,
@@ -1141,7 +1176,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       state.sessionId,
       handleResponse,
       runStageAction,
-      addUserMessage,
+      addUserFormMessage,
       postInteract,
     ]
   );
@@ -1161,16 +1196,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
         error: null,
       }));
 
-      // 可读摘要
-      const lines = questions.map((q) => {
-        const val = answers[q.question_id];
-        const label =
-          q.options.find((o) => o.value === val)?.label || val || "";
-        return `${q.question}：${label}`;
-      });
-      const summary = `文书类型：${selectedTypeLabel}\n${lines.join("\n")}`;
-
-      addUserMessage(summary, undefined, {
+      addUserFormMessage({
         type: "pre_questions",
         questions,
         answers,
@@ -1235,7 +1261,7 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
       state.sessionId,
       handleResponse,
       runStageAction,
-      addUserMessage,
+      addUserFormMessage,
       postInteract,
     ]
   );
@@ -1390,7 +1416,6 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
   return {
     // 状态
     ...state,
-    streamingEnabled,
 
     // 方法
     sendMessage,
@@ -1403,6 +1428,5 @@ export function useLegalChat(options: UseLegalChatOptions = {}) {
     stopStream,
     reset,
     initSession,
-    setStreamingEnabled,
   };
 }

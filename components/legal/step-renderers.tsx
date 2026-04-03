@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * 法律文书助手 - 各阶段专属渲染组件
- * 根据 next_step 提供差异化的 UI 渲染
+ * 法律文书助手 - 各阶段专属渲染组件 (Legal Elite V2.0)
  */
 
-import { useState } from "react";
-
+import { useRef, useState } from "react";
+import { PlusIcon } from "@/components/icons";
 import type {
   DocumentTypeOption,
   FillQuestion,
@@ -61,29 +60,39 @@ export function LaborContractCheck({
   onSkip,
 }: LaborContractCheckProps) {
   return (
-    <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
-      <div className="font-medium">{message}</div>
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-4 rounded-2xl border border-primary/20 bg-primary/5 p-6 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center gap-3 font-semibold text-primary">
+        <div className="size-2 rounded-full bg-primary animate-pulse" />
+        {message}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <Button
+          className="h-12 rounded-xl shadow-sm hover:shadow-md transition-all active:scale-95"
           disabled={isLoading}
           onClick={() => onConfirm(true)}
           variant="default"
         >
-          有劳动合同
+          我有劳动合同
         </Button>
         <Button
+          className="h-12 rounded-xl border-primary/20 hover:bg-primary/5 transition-all active:scale-95"
           disabled={isLoading}
           onClick={() => onConfirm(false)}
           variant="outline"
         >
-          没有劳动合同
+          我没有劳动合同
         </Button>
-        {canSkip && onSkip && (
-          <Button disabled={isLoading} onClick={onSkip} variant="ghost">
-            跳过此步骤
-          </Button>
-        )}
       </div>
+      {canSkip && onSkip && (
+        <Button 
+          className="w-full text-muted-foreground hover:text-primary transition-colors" 
+          disabled={isLoading} 
+          onClick={onSkip} 
+          variant="ghost"
+        >
+          暂不确定，先跳过
+        </Button>
+      )}
     </div>
   );
 }
@@ -101,7 +110,7 @@ export function FillQuestionsForm({
   questions,
   isLoading,
   onSubmit,
-}: FillQuestionsFormProps) {
+}: FillQuestionsFormProps, ref: any) {
   const [values, setValues] = useState<Record<string, string>>({});
 
   const handleChange = (questionId: string, value: string) => {
@@ -118,26 +127,34 @@ export function FillQuestionsForm({
     .every((q) => values[q.question_id]?.trim());
 
   return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
-      {questions.map((q) => (
-        <div className="space-y-1.5" key={q.question_id}>
-          <label className="font-medium text-sm" htmlFor={q.question_id}>
-            {q.question}
-            {q.required && <span className="text-red-500"> *</span>}
-          </label>
-          <Input
-            disabled={isLoading}
-            id={q.question_id}
-            onChange={(e) => handleChange(q.question_id, e.target.value)}
-            placeholder={q.placeholder || "请输入"}
-            required={q.required}
-            value={values[q.question_id] || ""}
-          />
-        </div>
-      ))}
+    <form className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500" onSubmit={handleSubmit}>
+      <div className="space-y-1 border-b pb-4">
+        <h3 className="font-bold text-lg tracking-tight text-foreground">完善细节信息</h3>
+        <p className="text-sm text-muted-foreground">请填写以下信息以便我们生成更精准的文书</p>
+      </div>
 
-      <Button className="w-full" disabled={isLoading || !isValid} type="submit">
-        {isLoading ? "提交中..." : "提交信息"}
+      <div className="space-y-5">
+        {questions.map((q) => (
+          <div className="space-y-2" key={q.question_id}>
+            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80 px-1" htmlFor={q.question_id}>
+              {q.question}
+              {q.required && <span className="ml-1 text-destructive">*</span>}
+            </label>
+            <Input
+              className="h-12 rounded-xl bg-muted/30 border-none px-4 focus-visible:ring-primary/20 focus-visible:bg-background transition-all shadow-inner"
+              disabled={isLoading}
+              id={q.question_id}
+              onChange={(e) => handleChange(q.question_id, e.target.value)}
+              placeholder={q.placeholder || "请输入详细信息..."}
+              required={q.required}
+              value={values[q.question_id] || ""}
+            />
+          </div>
+        ))}
+      </div>
+
+      <Button className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all" disabled={isLoading || !isValid} type="submit">
+        {isLoading ? "正在生成..." : "提交并预览文书"}
       </Button>
     </form>
   );
@@ -173,59 +190,71 @@ export function SupplementForm({
     .every((f) => values[f.field_id]?.trim());
 
   return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
-      {fields.map((field) => (
-        <div className="space-y-1.5" key={field.field_id}>
-          <label className="font-medium text-sm" htmlFor={field.field_id}>
-            {field.label}
-            {field.required && <span className="text-red-500">*</span>}
-          </label>
+    <form className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500" onSubmit={handleSubmit}>
+      <div className="space-y-1 border-b pb-4">
+        <h3 className="font-bold text-lg tracking-tight text-foreground">补充必要材料</h3>
+        <p className="text-sm text-muted-foreground">最后一步，我们需要补充以下细节</p>
+      </div>
 
-          {field.type === "textarea" ? (
-            <Textarea
-              disabled={isLoading}
-              id={field.field_id}
-              onChange={(e) => handleChange(field.field_id, e.target.value)}
-              placeholder={field.placeholder}
-              required={field.required}
-              value={values[field.field_id] || ""}
-            />
-          ) : field.type === "select" && field.options ? (
-            <select
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:font-medium file:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isLoading}
-              id={field.field_id}
-              onChange={(e) => handleChange(field.field_id, e.target.value)}
-              required={field.required}
-              value={values[field.field_id] || ""}
-            >
-              <option value="">{field.placeholder || "请选择..."}</option>
-              {field.options.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <Input
-              disabled={isLoading}
-              id={field.field_id}
-              onChange={(e) => handleChange(field.field_id, e.target.value)}
-              placeholder={field.placeholder}
-              required={field.required}
-              type={field.type === "date" ? "date" : "text"}
-              value={values[field.field_id] || ""}
-            />
-          )}
-        </div>
-      ))}
+      <div className="space-y-5">
+        {fields.map((field) => (
+          <div className="space-y-2" key={field.field_id}>
+            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80 px-1" htmlFor={field.field_id}>
+              {field.label}
+              {field.required && <span className="ml-1 text-destructive">*</span>}
+            </label>
 
-      <Button className="w-full" disabled={isLoading || !isValid} type="submit">
-        {isLoading ? "提交中..." : "提交信息"}
+            {field.type === "textarea" ? (
+              <Textarea
+                className="rounded-xl bg-muted/30 border-none px-4 py-3 focus-visible:ring-primary/20 focus-visible:bg-background transition-all shadow-inner min-h-[100px]"
+                disabled={isLoading}
+                id={field.field_id}
+                onChange={(e) => handleChange(field.field_id, e.target.value)}
+                placeholder={field.placeholder}
+                required={field.required}
+                value={values[field.field_id] || ""}
+              />
+            ) : field.type === "select" && field.options ? (
+              <select
+                className="flex h-12 w-full rounded-xl border-none bg-muted/30 px-4 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:bg-background transition-all shadow-inner disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isLoading}
+                id={field.field_id}
+                onChange={(e) => handleChange(field.field_id, e.target.value)}
+                required={field.required}
+                value={values[field.field_id] || ""}
+              >
+                <option value="">{field.placeholder || "请选择..."}</option>
+                {field.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Input
+                className="h-12 rounded-xl bg-muted/30 border-none px-4 focus-visible:ring-primary/20 focus-visible:bg-background transition-all shadow-inner"
+                disabled={isLoading}
+                id={field.field_id}
+                onChange={(e) => handleChange(field.field_id, e.target.value)}
+                placeholder={field.placeholder}
+                required={field.required}
+                type={field.type === "date" ? "date" : "text"}
+                value={values[field.field_id] || ""}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Button className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all" disabled={isLoading || !isValid} type="submit">
+        {isLoading ? "提交中..." : "确认并生成文书"}
       </Button>
     </form>
   );
 }
+
+import { DocumentPreview } from "./legal-refined-ui";
+import { toast } from "sonner";
 
 // ============================================================
 // 完成状态 (completed 阶段)
@@ -247,43 +276,209 @@ export function CompletedDocument({
   onReset,
   onClose,
 }: CompletedDocumentProps) {
+  const paperRef = useRef<HTMLDivElement | null>(null);
+
+  const getPrintableText = () => {
+    const renderedContent = paperRef.current
+      ?.querySelector<HTMLElement>("[data-document-preview-copy-source]")
+      ?.innerText?.trim();
+
+    return renderedContent || content.trim();
+  };
+
+  const handleCopy = async () => {
+    const trimmedContent = getPrintableText();
+    if (!trimmedContent) {
+      toast.error("当前没有可复制的文书内容");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(trimmedContent);
+      toast.success("文书内容已复制到剪贴板");
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = trimmedContent;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      try {
+        const copied = document.execCommand("copy");
+        if (copied) {
+          toast.success("文书内容已复制到剪贴板");
+          return;
+        }
+      } catch {
+        // no-op, unified failure handling below
+      } finally {
+        document.body.removeChild(textarea);
+      }
+
+      toast.error("复制失败，请检查浏览器剪贴板权限");
+    }
+  };
+
+  const handlePrint = () => {
+    const paper = paperRef.current;
+    if (!paper || !getPrintableText()) {
+      toast.error("当前没有可打印的文书内容");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "width=960,height=1200");
+    if (!printWindow) {
+      toast.error("打印窗口被浏览器拦截，请允许弹窗后重试");
+      return;
+    }
+
+    const styles = Array.from(
+      document.querySelectorAll('style, link[rel="stylesheet"]')
+    )
+      .map((node) => node.outerHTML)
+      .join("\n");
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${docType || "法律文书"}</title>
+          ${styles}
+          <style>
+            @page {
+              size: A4;
+              margin: 14mm 12mm;
+            }
+
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+            }
+
+            body {
+              color: #18181b;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .document-print-shell {
+              padding: 0;
+            }
+
+            [data-document-preview-paper] {
+              max-width: none !important;
+              margin: 0 auto !important;
+              box-shadow: none !important;
+              border: none !important;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="document-print-shell">${paper.outerHTML}</div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+
+    let hasTriggeredPrint = false;
+
+    const triggerPrint = () => {
+      if (hasTriggeredPrint || printWindow.closed) {
+        return;
+      }
+      hasTriggeredPrint = true;
+
+      const performPrint = () => {
+        if (printWindow.closed) {
+          return;
+        }
+        printWindow.focus();
+        printWindow.print();
+      };
+
+      const fontsReady = printWindow.document.fonts?.ready;
+      if (fontsReady) {
+        fontsReady
+          .catch(() => undefined)
+          .finally(() => {
+            window.setTimeout(performPrint, 150);
+          });
+        return;
+      }
+
+      window.setTimeout(performPrint, 150);
+    };
+
+    const closePrintWindow = () => {
+      if (!printWindow.closed) {
+        printWindow.close();
+      }
+    };
+
+    printWindow.addEventListener("afterprint", closePrintWindow, {
+      once: true,
+    });
+
+    printWindow.addEventListener("beforeunload", () => {
+      hasTriggeredPrint = true;
+    });
+
+    printWindow.onload = () => {
+      window.setTimeout(triggerPrint, 80);
+    };
+
+    window.setTimeout(() => {
+      printWindow.focus();
+      triggerPrint();
+    }, 400);
+  };
+
+  const handleDownload = () => {
+    if (!downloadUrl) {
+      toast.error("当前没有可下载的文书文件");
+      return;
+    }
+
+    window.open(downloadUrl, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <div className="space-y-4">
-      {/* 文书类型标签 */}
-      <div className="flex items-center gap-2">
-        <span className="rounded-full bg-green-100 px-3 py-1 font-medium text-green-700 text-sm dark:bg-green-950/50 dark:text-green-400">
-          {docType}
-        </span>
-        <span className="text-green-600 text-sm">已生成完成</span>
-      </div>
+    <div className="space-y-6">
+      <DocumentPreview
+        title={docType}
+        content={content}
+        onCopy={handleCopy}
+        onPrint={handlePrint}
+        onDownload={handleDownload}
+        onEdit={() => toast.info("在线编辑功能即将上线")}
+        paperRef={paperRef}
+      />
 
-      {/* 文书内容预览 */}
-      <div className="max-h-96 overflow-y-auto rounded-lg border bg-white p-4 dark:bg-zinc-900">
-        <pre className="whitespace-pre-wrap font-sans text-sm">{content}</pre>
-      </div>
-
-      {/* 操作按钮 */}
-      <div className="flex gap-2">
-        {downloadUrl && (
-          <Button asChild className="flex-1">
-            <a download href={downloadUrl}>
-              下载文书
-            </a>
-          </Button>
-        )}
-        <Button className="flex-1" onClick={onReset} variant="outline">
-          开始新的咨询
-        </Button>
-        {onClose && (
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Button
-            className="flex-1"
-            disabled={isLoading}
-            onClick={onClose}
-            variant="ghost"
+            className="h-12 rounded-xl border-dashed"
+            onClick={onReset}
+            variant="outline"
           >
-            结束会话
+            重新生成
           </Button>
-        )}
+          {onClose && (
+            <Button
+              className="h-12 rounded-xl"
+              disabled={isLoading}
+              onClick={onClose}
+              variant="secondary"
+            >
+              完成并退出
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -319,7 +514,6 @@ export function PreQuestionsForm({
   const handleAnswer = (questionId: string, value: string) => {
     const next = { ...answers, [questionId]: value };
     setAnswers(next);
-    // 根据答案自动推荐文书类型
     const inferred = inferDocumentType(next);
     if (documentTypes.some((dt) => dt.value === inferred)) {
       setSelectedDocType(inferred);
@@ -342,26 +536,25 @@ export function PreQuestionsForm({
   const inferredType = inferDocumentType(answers);
 
   return (
-    <form className="space-y-6" onSubmit={handleSubmit}>
-      {/* 问题列表 */}
+    <form className="space-y-8" onSubmit={handleSubmit}>
       <div className="space-y-4">
         {questions.map((q) => (
           <div
-            className="space-y-2 rounded-lg border bg-muted/30 p-4"
+            className="group space-y-3 rounded-2xl border border-border/50 bg-background/50 p-5 transition-all hover:border-primary/20 hover:shadow-md"
             key={q.question_id}
           >
-            <div className="font-medium text-sm">
+            <div className="font-bold text-sm tracking-tight px-1 text-foreground">
               {q.question}
-              {q.required && <span className="text-red-500"> *</span>}
+              {q.required && <span className="ml-1 text-destructive">*</span>}
             </div>
             <div className="flex flex-wrap gap-2">
               {q.options.map((opt) => (
                 <button
                   className={cn(
-                    "rounded-md border px-3 py-1.5 text-sm transition-all",
+                    "relative overflow-hidden rounded-xl border px-4 py-2.5 text-sm font-medium transition-all",
                     answers[q.question_id] === opt.value
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "hover:border-primary/50"
+                      ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]"
+                      : "bg-background hover:border-primary/50 hover:bg-primary/5"
                   )}
                   disabled={isLoading}
                   key={opt.value}
@@ -376,35 +569,43 @@ export function PreQuestionsForm({
         ))}
       </div>
 
-      {/* 文书类型选择 */}
       {documentTypes.length > 0 && (
-        <div className="space-y-3">
-          <div className="font-medium text-sm">
-            请选择文书类型 <span className="text-red-500">*</span>
+        <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="flex items-center justify-between px-1 text-foreground">
+            <div className="font-bold text-sm">为您推荐的文书方案</div>
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-black">Smart AI Selection</span>
           </div>
           <div className="grid gap-3">
             {documentTypes.map((dt) => (
               <button
                 className={cn(
-                  "relative w-full rounded-lg border p-3 text-left transition-all",
+                  "group relative w-full overflow-hidden rounded-2xl border p-4 text-left transition-all",
                   selectedDocType === dt.value
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "hover:border-primary/50"
+                    ? "border-primary bg-primary/5 ring-1 ring-primary shadow-inner"
+                    : "bg-background hover:border-primary/30 hover:shadow-sm"
                 )}
                 disabled={isLoading}
                 key={dt.value}
                 onClick={() => setSelectedDocType(dt.value)}
                 type="button"
               >
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{dt.label}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "flex size-8 items-center justify-center rounded-lg transition-colors",
+                      selectedDocType === dt.value ? "bg-primary text-primary-foreground" : "bg-muted group-hover:bg-primary/10 group-hover:text-primary"
+                    )}>
+                      <PlusIcon className="size-4" />
+                    </div>
+                    <span className="font-bold text-sm tracking-tight text-foreground">{dt.label}</span>
+                  </div>
                   {inferredType === dt.value && requiredAnswered && (
-                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-600 text-xs dark:bg-blue-950/50 dark:text-blue-400">
-                      推荐
+                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary text-[10px] font-black uppercase tracking-tighter">
+                      AI RECOMENDED
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 text-muted-foreground text-xs">
+                <div className="mt-2 text-muted-foreground text-xs pl-11 leading-relaxed opacity-80">
                   {dt.description}
                 </div>
               </button>
@@ -413,8 +614,8 @@ export function PreQuestionsForm({
         </div>
       )}
 
-      <Button className="w-full" disabled={isLoading || !isValid} type="submit">
-        {isLoading ? "提交中..." : "确认提交"}
+      <Button className="h-14 w-full rounded-2xl bg-primary text-lg font-bold shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" disabled={isLoading || !isValid} type="submit">
+        {isLoading ? "正在处理流程..." : "开始生成正式文书"}
       </Button>
     </form>
   );
@@ -435,21 +636,21 @@ export function PreQuestionsSubmitted({
   selectedTypeLabel,
 }: PreQuestionsSubmittedProps) {
   return (
-    <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+    <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5 shadow-sm">
       {questions.map((q) => {
         const selected = answers[q.question_id];
         const label =
           q.options.find((o) => o.value === selected)?.label || selected || "—";
         return (
           <div key={q.question_id}>
-            <div className="text-muted-foreground text-xs">{q.question}</div>
-            <div className="font-medium text-sm">{label}</div>
+            <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">{q.question}</div>
+            <div className="font-semibold text-[15px] leading-7 text-foreground">{label}</div>
           </div>
         );
       })}
-      <div className="border-t pt-2">
-        <div className="text-muted-foreground text-xs">文书类型</div>
-        <div className="font-medium text-sm">{selectedTypeLabel}</div>
+      <div className="border-t border-border/50 pt-3">
+        <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">最终文书类型</div>
+        <div className="font-bold text-[15px] leading-7 text-primary">{selectedTypeLabel}</div>
       </div>
     </div>
   );
@@ -468,11 +669,11 @@ export function FillQuestionsSubmitted({
   values,
 }: FillQuestionsSubmittedProps) {
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
+    <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5 shadow-sm">
       {questions.map((q) => (
         <div key={q.question_id}>
-          <div className="text-muted-foreground text-xs">{q.question}</div>
-          <div className="font-medium text-sm">
+          <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">{q.question}</div>
+          <div className="font-semibold text-[15px] leading-7 text-foreground">
             {values[q.question_id] || "—"}
           </div>
         </div>
@@ -494,11 +695,11 @@ export function SupplementSubmitted({
   values,
 }: SupplementSubmittedProps) {
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
+    <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5 shadow-sm">
       {fields.map((f) => (
         <div key={f.field_id}>
-          <div className="text-muted-foreground text-xs">{f.label}</div>
-          <div className="font-medium text-sm">{values[f.field_id] || "—"}</div>
+          <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">{f.label}</div>
+          <div className="font-semibold text-[15px] leading-7 text-foreground">{values[f.field_id] || "—"}</div>
         </div>
       ))}
     </div>
@@ -518,12 +719,19 @@ export function SessionClosedBanner({
   onReset,
 }: SessionClosedBannerProps) {
   return (
-    <div className="space-y-3 rounded-lg border bg-muted/30 p-4 text-center">
-      <div className="text-muted-foreground text-sm">
-        {message || "会话已结束，感谢您的使用！"}
+    <div className="space-y-4 rounded-2xl border border-dashed border-border/50 bg-muted/10 p-8 text-center animate-in fade-in zoom-in-95">
+      <div className="flex flex-col items-center gap-2">
+        <div className="size-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+           <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+           </svg>
+        </div>
+        <div className="text-muted-foreground font-medium">
+          {message || "咨询流程已闭环，感谢您的信任！"}
+        </div>
       </div>
-      <Button onClick={onReset} variant="outline">
-        开始新的咨询
+      <Button className="rounded-xl px-8" onClick={onReset} variant="outline">
+        发起新咨询
       </Button>
     </div>
   );

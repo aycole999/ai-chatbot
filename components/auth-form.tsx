@@ -15,46 +15,56 @@ export function AuthForm({
   defaultEmail?: string;
 }) {
   return (
-    <Form action={action} className="flex flex-col gap-4 px-4 sm:px-16">
-      <div className="flex flex-col gap-2">
-        <Label
-          className="font-normal text-zinc-600 dark:text-zinc-400"
-          htmlFor="email"
-        >
-          邮箱地址
-        </Label>
-
-        <Input
-          autoComplete="email"
-          autoFocus
-          className="bg-muted text-md md:text-sm"
-          defaultValue={defaultEmail}
-          id="email"
-          name="email"
-          placeholder="user@acme.com"
-          required
-          type="email"
-        />
+    <Form action={action} className="flex flex-col gap-6 px-4 py-8 sm:px-12 bg-background/50 backdrop-blur-md rounded-2xl border border-border/50 shadow-2xl">
+      <div className="space-y-2 text-center">
+        <h1 className="text-2xl font-bold tracking-tight">欢迎使用</h1>
+        <p className="text-sm text-muted-foreground">请输入您的凭据以访问您的帐户</p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label
-          className="font-normal text-zinc-600 dark:text-zinc-400"
-          htmlFor="password"
-        >
-          密码
-        </Label>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label
+            className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70"
+            htmlFor="email"
+          >
+            邮箱地址
+          </Label>
 
-        <Input
-          className="bg-muted text-md md:text-sm"
-          id="password"
-          name="password"
-          required
-          type="password"
-        />
+          <Input
+            autoComplete="email"
+            autoFocus
+            className="h-12 rounded-xl bg-muted/30 border-none px-4 text-md focus-visible:ring-primary/20 focus-visible:bg-background transition-all shadow-inner"
+            defaultValue={defaultEmail}
+            id="email"
+            name="email"
+            placeholder="name@example.com"
+            required
+            type="email"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label
+            className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70"
+            htmlFor="password"
+          >
+            密码
+          </Label>
+
+          <Input
+            className="h-12 rounded-xl bg-muted/30 border-none px-4 text-md focus-visible:ring-primary/20 focus-visible:bg-background transition-all shadow-inner"
+            id="password"
+            name="password"
+            placeholder="••••••••"
+            required
+            type="password"
+          />
+        </div>
       </div>
 
-      {children}
+      <div className="pt-2">
+        {children}
+      </div>
     </Form>
   );
 }

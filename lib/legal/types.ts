@@ -56,6 +56,16 @@ export interface AttachmentAnalysis {
 export interface UpstreamNestedData {
   missing_info?: Array<{ field: string; label: string; required: boolean }>;
   collected_info?: Record<string, string>;
+  collected_facts?: Record<string, string>;
+  can_generate_document?: boolean;
+  consultation_count?: number;
+  multi_case?: Record<string, unknown>;
+  document?: {
+    type?: string;
+    name?: string;
+    content?: string;
+  };
+  download_url?: string;
   completion_rate?: number;
   selected_name?: string;
   selected_type?: string;
@@ -75,8 +85,7 @@ export interface LegalResponseData {
   // - message, prompt
 
   // consulting 阶段
-  can_generate_document?: boolean;
-  collected_facts?: Record<string, string>;
+  // - data.can_generate_document, data.collected_facts
   attachment_analysis?: AttachmentAnalysis[];
 
   // fill_questions 阶段（后端 fill_questions 和 supplement_info 都用 questions 字段）
@@ -207,10 +216,38 @@ export interface LegalAttachment {
 // 消息角色
 export type LegalMessageRole = "user" | "assistant" | "system";
 
+export type LegalMessageType = "text" | "form_submission";
+
+export interface LegalPreQuestionsFormData {
+  type: "pre_questions";
+  questions: PreQuestion[];
+  answers: Record<string, string>;
+  selectedType: string;
+  selectedTypeLabel: string;
+}
+
+export interface LegalFillQuestionsFormData {
+  type: "fill_questions";
+  questions: FillQuestion[];
+  values: Record<string, string>;
+}
+
+export interface LegalSupplementInfoFormData {
+  type: "supplement_info";
+  fields: SupplementField[];
+  values: Record<string, string>;
+}
+
+export type LegalFormMessageData =
+  | LegalPreQuestionsFormData
+  | LegalFillQuestionsFormData
+  | LegalSupplementInfoFormData;
+
 // 消息类型
 export interface LegalMessage {
   id: string;
   role: LegalMessageRole;
+  type: LegalMessageType;
   content: string;
   step?: LegalStep;
   data?: LegalResponseData;
@@ -218,7 +255,7 @@ export interface LegalMessage {
   is_streaming?: boolean;
   created_at: Date;
   // 提交表单后的持久化数据（用于只读渲染）
-  formData?: Record<string, unknown>;
+  formData?: LegalFormMessageData;
 }
 
 // API 请求体

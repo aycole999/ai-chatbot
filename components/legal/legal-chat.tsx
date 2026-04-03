@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MicIcon, PaperclipIcon } from "lucide-react";
+import { MicIcon, PaperclipIcon, FileText } from "lucide-react";
 import {
   type ChangeEvent,
   useCallback,
@@ -85,26 +85,56 @@ type UploadCredentialVo = {
 function LegalGreeting() {
   return (
     <div
-      className="mx-auto mt-4 flex size-full max-w-3xl flex-col justify-center px-4 md:mt-16 md:px-8"
+      className="mx-auto mt-8 flex size-full max-w-3xl flex-col items-center justify-center px-4 text-center md:mt-20 md:px-8"
       key="legal-overview"
     >
       <motion.div
+        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, scale: 0.9 }}
+        className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-primary shadow-xl shadow-primary/20"
+      >
+        <SparklesIcon className="text-white" size={32} />
+      </motion.div>
+      
+      <motion.div
         animate={{ opacity: 1, y: 0 }}
-        className="font-semibold text-xl md:text-2xl"
+        className="font-black text-3xl md:text-4xl tracking-tight text-foreground"
         exit={{ opacity: 0, y: 10 }}
         initial={{ opacity: 0, y: 10 }}
-        transition={{ delay: 0.5 }}
+        transition={{ delay: 0.2 }}
       >
-        法律文书助手
+        法律文书助手 <span className="text-primary">Pro</span>
       </motion.div>
       <motion.div
         animate={{ opacity: 1, y: 0 }}
-        className="text-xl text-zinc-500 md:text-2xl"
+        className="mt-4 max-w-lg text-lg text-muted-foreground leading-relaxed"
         exit={{ opacity: 0, y: 10 }}
         initial={{ opacity: 0, y: 10 }}
-        transition={{ delay: 0.6 }}
+        transition={{ delay: 0.3 }}
       >
-        请描述您遇到的法律问题，我将帮您生成相应的法律文书。
+        描述您的案件细节，我将为您提供法律分析，并自动构建符合法院要求的专业法律文书。
+      </motion.div>
+
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 w-full text-left"
+      >
+        {[
+          { icon: <FileText className="size-5" />, label: "劳动仲裁申请", desc: "未签合同、欠薪、非法裁员" },
+          { icon: <FileText className="size-5" />, label: "民事起诉状", desc: "合同纠纷、侵权损害赔偿" },
+        ].map((item, i) => (
+          <div key={i} className="flex items-center gap-4 rounded-2xl border bg-muted/30 p-4 hover:bg-muted/50 transition-colors cursor-pointer group">
+            <div className="size-10 rounded-xl bg-background border flex items-center justify-center text-primary group-hover:scale-110 transition-transform shadow-sm">
+              {item.icon}
+            </div>
+            <div>
+              <div className="font-bold text-sm">{item.label}</div>
+              <div className="text-xs text-muted-foreground">{item.desc}</div>
+            </div>
+          </div>
+        ))}
       </motion.div>
     </div>
   );
@@ -121,28 +151,34 @@ function LegalMessageItem({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
+  const isFormSubmissionMessage = message.type === "form_submission";
+  const hasMessageContent = message.content.trim().length > 0;
 
   return (
     <div
-      className="group/message fade-in w-full animate-in duration-200"
+      className="group/message fade-in w-full animate-in duration-300"
       data-role={message.role}
     >
       <div
-        className={cn("flex w-full items-start gap-2 md:gap-3", {
-          "justify-end": isUser,
-          "justify-start": !isUser,
+        className={cn("flex w-full items-start gap-4", {
+          "flex-row-reverse": isUser,
         })}
       >
-        {!isUser && (
-          <div className="-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
-            <SparklesIcon size={14} />
-          </div>
-        )}
+        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors", {
+          "bg-primary text-primary-foreground border-primary/20": isUser,
+          "bg-background text-primary border-border": !isUser,
+        })}>
+          {isUser ? (
+            <span className="text-[10px] font-bold">ME</span>
+          ) : (
+            <SparklesIcon size={16} />
+          )}
+        </div>
 
         <div
-          className={cn("flex flex-col gap-2", {
-            "max-w-[calc(100%-2.5rem)] sm:max-w-[min(fit-content,80%)]": isUser,
-            "w-full": !isUser,
+          className={cn("flex flex-col gap-2 transition-all", {
+            "items-end max-w-[85%]": isUser,
+            "items-start w-full": !isUser,
           })}
         >
           {/* 用户附件 */}
@@ -162,12 +198,12 @@ function LegalMessageItem({
                   );
                 }
 
-                // 非图片文件显示文件名
                 return (
                   <div
-                    className="rounded-lg border bg-muted/50 px-3 py-2 text-sm"
+                    className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-sm shadow-sm"
                     key={attachment.oss_id}
                   >
+                    <FileText className="size-4 text-primary" />
                     {attachment.file_name}
                   </div>
                 );
@@ -176,44 +212,44 @@ function LegalMessageItem({
           )}
 
           {/* 消息内容 */}
-          <div
-            className={cn("rounded-2xl px-3 py-2", {
-              "bg-[#006cff] text-white text-right": isUser,
-              "bg-transparent px-0 py-0": !isUser,
-            })}
-          >
-            {isUser ? (
-              message.content
-            ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <Response>{message.content}</Response>
-                {isStreaming && message.is_streaming && (
-                  <span className="inline-block animate-pulse">▊</span>
-                )}
-              </div>
-            )}
-          </div>
+          {(!isUser || (message.type === "text" && hasMessageContent)) && (
+            <div
+              className={cn("rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed transition-all", {
+                "bg-primary text-primary-foreground shadow-lg shadow-primary/10": isUser,
+                "bg-transparent px-0 py-1": !isUser,
+              })}
+            >
+              {isUser ? (
+                message.content
+              ) : (
+                <div className="prose prose-zinc dark:prose-invert prose-headings:font-bold prose-headings:text-foreground prose-p:text-muted-foreground prose-p:leading-7 max-w-none">
+                  <Response>{message.content}</Response>
+                  {isStreaming && message.is_streaming && (
+                    <span className="inline-block animate-pulse text-primary ml-1">▊</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 已提交表单（只读） */}
-          {isUser && message.formData?.type === "pre_questions" && (
+          {isUser && isFormSubmissionMessage && message.formData?.type === "pre_questions" && (
             <PreQuestionsSubmitted
-              answers={message.formData.answers as Record<string, string>}
-              questions={message.formData.questions as PreQuestion[]}
-              selectedTypeLabel={
-                (message.formData.selectedTypeLabel as string) || ""
-              }
+              answers={message.formData.answers}
+              questions={message.formData.questions}
+              selectedTypeLabel={message.formData.selectedTypeLabel}
             />
           )}
-          {isUser && message.formData?.type === "fill_questions" && (
+          {isUser && isFormSubmissionMessage && message.formData?.type === "fill_questions" && (
             <FillQuestionsSubmitted
-              questions={message.formData.questions as FillQuestion[]}
-              values={message.formData.values as Record<string, string>}
+              questions={message.formData.questions}
+              values={message.formData.values}
             />
           )}
-          {isUser && message.formData?.type === "supplement_info" && (
+          {isUser && isFormSubmissionMessage && message.formData?.type === "supplement_info" && (
             <SupplementSubmitted
-              fields={message.formData.fields as SupplementField[]}
-              values={message.formData.values as Record<string, string>}
+              fields={message.formData.fields}
+              values={message.formData.values}
             />
           )}
 
@@ -241,30 +277,32 @@ function LegalMessageItem({
 function ThinkingIndicator() {
   return (
     <div
-      className="group/message fade-in w-full animate-in duration-300"
+      className="group/message fade-in w-full animate-in duration-500"
       data-role="assistant"
     >
-      <div className="flex items-start justify-start gap-3">
-        <div className="-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
-          <div className="animate-pulse">
-            <SparklesIcon size={14} />
+      <div className="flex items-start justify-start gap-4">
+        <div className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full border bg-background text-primary shadow-sm">
+          <div className="animate-spin-slow">
+            <SparklesIcon size={16} />
           </div>
         </div>
 
-        <div className="flex w-full flex-col gap-2 md:gap-4">
-          <div className="flex items-center gap-1 p-0 text-muted-foreground text-sm">
-            <span className="animate-pulse">思考中</span>
-            <span className="inline-flex">
-              <span className="animate-bounce [animation-delay:0ms]">.</span>
-              <span className="animate-bounce [animation-delay:150ms]">.</span>
-              <span className="animate-bounce [animation-delay:300ms]">.</span>
-            </span>
+        <div className="flex w-full flex-col gap-2">
+          <div className="flex items-center gap-3 px-1 pt-2.5">
+            <div className="flex gap-1.5">
+              <span className="size-1.5 animate-bounce rounded-full bg-primary/40 [animation-delay:0ms]" />
+              <span className="size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:150ms]" />
+              <span className="size-1.5 animate-bounce rounded-full bg-primary [animation-delay:300ms]" />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-widest text-primary/70 animate-pulse">正在检索法律依据...</span>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+import { ConsultationActionCard } from "./legal-refined-ui";
 
 // ============================================================
 // 消息操作栏（consulting 阶段 "生成文书" 按钮）
@@ -277,15 +315,13 @@ function MessageActionBar({
   isLoading?: boolean;
 }) {
   return (
-    <div className="flex gap-2 pl-10">
-      <Button
-        disabled={isLoading}
-        onClick={onGenerateDocument}
-        size="sm"
-        variant="outline"
-      >
-        生成文书
-      </Button>
+    <div className="pl-10">
+      <ConsultationActionCard
+        title="生成专业法律文书"
+        description="基于以上咨询信息，我已经为您准备好了文书初稿的生成方案。您可以立即开始生成正式文书。"
+        onGenerate={onGenerateDocument}
+        isLoading={isLoading}
+      />
     </div>
   );
 }
@@ -441,6 +477,7 @@ export function LegalChat() {
     error,
     embedSessionToken,
     // 各阶段专属状态
+    canGenerateDocument,
     canSkipContract,
     supplementFields,
     preQuestions,
@@ -448,7 +485,6 @@ export function LegalChat() {
     documentTypes,
     templateId,
     completedDocument,
-    streamingEnabled,
     // 方法
     sendMessage,
     skipContractCheck,
@@ -460,8 +496,7 @@ export function LegalChat() {
     stopStream,
     reset,
     initSession,
-    setStreamingEnabled,
-  } = useLegalChat({ enableStreaming: true });
+  } = useLegalChat();
 
   const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<LegalAttachment[]>([]);
@@ -701,6 +736,12 @@ export function LegalChat() {
   // 显示输入区域的条件
   const showInput = currentStep === "greeting" || currentStep === "consulting";
 
+  const showGenerateDocumentAction =
+    currentStep === "consulting" &&
+    canGenerateDocument &&
+    !isLoading &&
+    !isStreaming;
+
   // 是否显示交互组件
   const showStepInteraction = currentStep !== "greeting";
 
@@ -733,7 +774,7 @@ export function LegalChat() {
             )}
 
             {/* 消息操作栏：consulting 阶段可生成文书时显示 */}
-            {currentStep === "consulting" && (
+            {showGenerateDocumentAction && (
               <MessageActionBar
                 isLoading={isLoading}
                 onGenerateDocument={generateDocument}
@@ -769,172 +810,165 @@ export function LegalChat() {
 
       {/* 输入区域 */}
       {showInput && (
-        <div className="border-t bg-background p-4">
+        <div className="bg-background px-4 pb-6 pt-2">
           <div className="mx-auto max-w-3xl">
-            {/* 隐藏的文件输入 */}
-            <input
-              accept=".bmp,.gif,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.html,.htm,.txt,.rar,.zip,.gz,.bz2,.mp3,.mp4,.avi,.rmvb,.pdf"
-              className="hidden"
-              multiple
-              onChange={handleFileChange}
-              ref={fileInputRef}
-              type="file"
-            />
+            <div className="relative flex flex-col rounded-2xl border bg-muted/20 p-2 shadow-sm ring-1 ring-border/50 focus-within:bg-background focus-within:ring-primary/20 focus-within:shadow-md transition-all duration-200">
+              {/* 隐藏的文件输入 */}
+              <input
+                accept=".bmp,.gif,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.html,.htm,.txt,.rar,.zip,.gz,.bz2,.mp3,.mp4,.avi,.rmvb,.pdf"
+                className="hidden"
+                multiple
+                onChange={handleFileChange}
+                ref={fileInputRef}
+                type="file"
+              />
 
-            {/* 附件预览区域 */}
-            {(attachments.length > 0 || uploadQueue.length > 0) && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {attachments.map((attachment) => (
-                  <div className="group relative" key={attachment.oss_id}>
+              {/* 附件预览区域 */}
+              {(attachments.length > 0 || uploadQueue.length > 0) && (
+                <div className="mb-2 flex flex-wrap gap-2 px-2 pt-2">
+                  {attachments.map((attachment) => (
+                    <div className="group relative" key={attachment.oss_id}>
+                      <PreviewAttachment
+                        attachment={{
+                          url: attachment.local_url || attachment.file_url || "",
+                          name: attachment.file_name,
+                          contentType: attachment.content_type,
+                        }}
+                        onRemove={() => removeAttachment(attachment.oss_id)}
+                      />
+                    </div>
+                  ))}
+                  {uploadQueue.map((fileName) => (
                     <PreviewAttachment
                       attachment={{
-                        url: attachment.local_url || attachment.file_url || "",
-                        name: attachment.file_name,
-                        contentType: attachment.content_type,
+                        url: "",
+                        name: fileName,
+                        contentType: "",
                       }}
-                      onRemove={() => removeAttachment(attachment.oss_id)}
+                      isUploading={true}
+                      key={fileName}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-end gap-2">
+                {isRecordingMode ? (
+                  <div className="flex-1 px-2">
+                    <InlineVoiceRecorder
+                      disabled={isLoading || isStreaming}
+                      isRecording={isVoiceRecording}
+                      onCancel={cancelVoiceRecording}
+                      onConfirm={confirmVoiceRecording}
                     />
                   </div>
-                ))}
-                {uploadQueue.map((fileName) => (
-                  <PreviewAttachment
-                    attachment={{
-                      url: "",
-                      name: fileName,
-                      contentType: "",
-                    }}
-                    isUploading={true}
-                    key={fileName}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* 输入区域：录音模式 vs 普通模式 */}
-            {isRecordingMode ? (
-              <InlineVoiceRecorder
-                disabled={isLoading || isStreaming}
-                isRecording={isVoiceRecording}
-                onCancel={cancelVoiceRecording}
-                onConfirm={confirmVoiceRecording}
-              />
-            ) : (
-              <div className="relative flex items-end gap-2">
-                <Textarea
-                  className="min-h-[80px] resize-none pr-12"
-                  disabled={isLoading || isStreaming}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="请描述您的法律问题..."
-                  ref={textareaRef}
-                  rows={3}
-                  value={inputValue}
-                />
-
-                <div className="absolute right-2 bottom-2 flex items-center gap-1">
-                  {/* 附件上传按钮 */}
-                  <Button
-                    className="size-8"
-                    disabled={isLoading || isStreaming}
-                    onClick={() => fileInputRef.current?.click()}
-                    size="icon"
-                    title="上传附件"
-                    variant="ghost"
-                  >
-                    <PaperclipIcon className="size-4" />
-                  </Button>
-
-                  {/* 语音输入按钮 */}
-                  <Button
-                    className="size-8"
-                    disabled={
-                      isLoading || isStreaming || voicePermission === false
-                    }
-                    onClick={startVoiceRecording}
-                    size="icon"
-                    title={
-                      voicePermission === false
-                        ? "麦克风权限被拒绝"
-                        : "语音输入"
-                    }
-                    variant="ghost"
-                  >
-                    <MicIcon
-                      className={cn(
-                        "size-4",
-                        voicePermission === false && "opacity-50"
-                      )}
+                ) : (
+                  <>
+                    <Textarea
+                      className="min-h-[44px] max-h-[200px] border-none bg-transparent px-3 py-3 focus-visible:ring-0 resize-none text-[15px]"
+                      disabled={isLoading || isStreaming}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="请描述您的法律问题..."
+                      ref={textareaRef}
+                      rows={1}
+                      value={inputValue}
                     />
-                  </Button>
+                  </>
+                )}
 
-                  {isStreaming ? (
+                {!isRecordingMode && (
+                  <div className="flex items-center gap-1 p-1">
+                    {/* 附件上传按钮 */}
                     <Button
-                      className="size-8"
-                      onClick={stopStream}
+                      className="size-8 hover:bg-muted"
+                      disabled={isLoading || isStreaming}
+                      onClick={() => fileInputRef.current?.click()}
                       size="icon"
+                      title="上传附件"
                       variant="ghost"
                     >
-                      <StopIcon size={16} />
+                      <PaperclipIcon className="size-4 text-muted-foreground" />
                     </Button>
-                  ) : (
+
+                    {/* 语音输入按钮 */}
                     <Button
-                      className="size-8"
+                      className="size-8 hover:bg-muted"
                       disabled={
-                        (!inputValue.trim() && attachments.length === 0) ||
-                        isLoading
+                        isLoading || isStreaming || voicePermission === false
                       }
-                      onClick={handleSend}
+                      onClick={startVoiceRecording}
                       size="icon"
+                      title={
+                        voicePermission === false
+                          ? "麦克风权限被拒绝"
+                          : "语音输入"
+                      }
+                      variant="ghost"
                     >
-                      <svg
-                        className="size-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          d="M22 2L11 13"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                        />
-                        <path
-                          d="M22 2L15 22L11 13L2 9L22 2Z"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                        />
-                      </svg>
+                      <MicIcon
+                        className={cn(
+                          "size-4 text-muted-foreground",
+                          voicePermission === false && "opacity-50"
+                        )}
+                      />
                     </Button>
-                  )}
-                </div>
-              </div>
-            )}
 
-            {/* 重置按钮和流式开关 */}
-            <div className="mt-2 flex items-center justify-between">
-              <button
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors",
-                  streamingEnabled
-                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                    : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                    {isStreaming ? (
+                      <Button
+                        className="size-8 text-primary hover:bg-primary/10"
+                        onClick={stopStream}
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <StopIcon size={16} />
+                      </Button>
+                    ) : (
+                      <Button
+                        className={cn(
+                          "size-8 transition-all",
+                          !inputValue.trim() && attachments.length === 0
+                            ? "opacity-50"
+                            : "bg-primary text-primary-foreground shadow-sm hover:opacity-90"
+                        )}
+                        disabled={
+                          (!inputValue.trim() && attachments.length === 0) ||
+                          isLoading
+                        }
+                        onClick={handleSend}
+                        size="icon"
+                      >
+                        <svg
+                          className="size-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            d="M22 2L11 13"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                          />
+                          <path
+                            d="M22 2L15 22L11 13L2 9L22 2Z"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                          />
+                        </svg>
+                      </Button>
+                    )}
+                  </div>
                 )}
-                onClick={() => setStreamingEnabled(!streamingEnabled)}
-                type="button"
-              >
-                <span
-                  className={cn(
-                    "size-2 rounded-full",
-                    streamingEnabled ? "bg-blue-500" : "bg-zinc-400"
-                  )}
-                />
-                {streamingEnabled ? "流式响应" : "普通响应"}
-              </button>
+              </div>
+            </div>
 
+            {/* 重置按钮 */}
+            <div className="mt-3 flex items-center justify-end px-1">
               {messages.length > 0 && (
-                <Button onClick={reset} size="sm" variant="ghost">
-                  重新开始
+                <Button className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={reset} size="sm" variant="ghost">
+                  清空对话
                 </Button>
               )}
             </div>

@@ -43,7 +43,7 @@ export async function GET(
   context: { params: Promise<{ documentId: string }> }
 ) {
   const { documentId } = await context.params;
-  const upstreamUrl = `${getBaseUrl()}/api/document/download/${encodeURIComponent(documentId)}`;
+  const upstreamUrl = `${getBaseUrl()}/document/download/${encodeURIComponent(documentId)}`;
 
   const upstream = await fetch(upstreamUrl, {
     method: "GET",
