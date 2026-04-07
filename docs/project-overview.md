@@ -2,7 +2,7 @@
 
 ## 1. 项目概述
 
-**Chat SDK** 是一个基于 Next.js 16 + Vercel AI SDK 构建的开源 AI 聊天模板。
+当前项目是一个基于 Next.js 16 构建的法律文书助手前端。
 
 ### 核心特性
 
@@ -10,18 +10,16 @@
 - **Artifact 系统**: 右侧面板实时生成/编辑文档、代码、表格、图片
 - **流式响应**: 使用 AI SDK 实现实时流式输出
 - **推理模式**: 支持带思维链 (Chain-of-Thought) 的推理模型
-- **版本控制**: Artifact 支持历史版本切换和 diff 对比
+- **匿名会话**: 通过 embed 通道接入后端，无需本地登录体系
 
 ### 技术栈
 
 | 类别 | 技术 |
 |------|------|
 | 框架 | Next.js 16 (App Router) |
-| AI | Vercel AI SDK + NewAPI (OpenAI 兼容) |
-| 数据库 | PostgreSQL + Drizzle ORM |
-| 认证 | Auth.js (NextAuth v5) |
+| AI | 对接后端法律服务 |
 | UI | shadcn/ui + Tailwind CSS + Radix UI |
-| 编辑器 | ProseMirror (文本) + CodeMirror (代码) |
+| 交互 | 流式会话、文件上传、语音输入 |
 | 测试 | Playwright |
 | 代码规范 | Ultracite (Biome) |
 
@@ -33,8 +31,6 @@
 |------|------|------|
 | `/` | `app/(legal)/(site)/page.tsx` | 法律文书助手首页 |
 | `/legal` | `app/(legal)/(site)/legal/route.ts` | 兼容路径（重定向到 `/`） |
-| `/login` | `app/(auth)/login/page.tsx` | 登录页 |
-| `/register` | `app/(auth)/register/page.tsx` | 注册页 |
 
 ---
 
@@ -72,15 +68,15 @@
 | `ImageEditor` | `components/image-editor.tsx` | 图片编辑器 |
 | `DiffView` | `components/diffview.tsx` | 版本差异对比视图 |
 
-### 侧边栏
+### 法律助手界面
 
 | 组件 | 文件 | 功能 |
 |------|------|------|
-| `AppSidebar` | `components/app-sidebar.tsx` | 应用侧边栏容器 |
-| `SidebarHistory` | `components/sidebar-history.tsx` | 历史对话列表 (无限滚动) |
-| `SidebarHistoryItem` | `components/sidebar-history-item.tsx` | 单个历史记录项 |
-| `SidebarUserNav` | `components/sidebar-user-nav.tsx` | 用户导航 (设置、登出) |
-| `SidebarToggle` | `components/sidebar-toggle.tsx` | 侧边栏展开/收起按钮 |
+| `LegalChat` | `components/legal/legal-chat.tsx` | 法律会话主组件 |
+| `LegalChatHeader` | `components/legal/legal-chat-header.tsx` | 顶部操作栏 |
+| `LegalSidebar` | `components/legal/legal-sidebar.tsx` | 左侧辅助栏 |
+| `StepRenderers` | `components/legal/step-renderers.tsx` | 后端步骤表单和文书结果渲染 |
+| `VoiceInput` | `components/legal/voice-input.tsx` | 语音录制与识别入口 |
 
 ### 消息元素 (`components/elements/`)
 
@@ -97,15 +93,9 @@
 
 | 组件 | 文件 | 功能 |
 |------|------|------|
-| `ModelSelector` | `components/model-selector.tsx` | 模型选择下拉框 |
-| `VisibilitySelector` | `components/visibility-selector.tsx` | 对话可见性 (公开/私有) |
-| `AuthForm` | `components/auth-form.tsx` | 登录/注册表单 |
-| `Greeting` | `components/greeting.tsx` | 首页欢迎语 |
-| `SuggestedActions` | `components/suggested-actions.tsx` | 建议的快捷操作 |
-| `Weather` | `components/weather.tsx` | 天气工具结果展示 |
-| `DataStreamHandler` | `components/data-stream-handler.tsx` | 处理自定义数据流事件 |
-| `DataStreamProvider` | `components/data-stream-provider.tsx` | 数据流 Context Provider |
-| `ThemeProvider` | `components/theme-provider.tsx` | 主题切换 (next-themes) |
+| `ThemeProvider` | `components/theme-provider.tsx` | 主题切换 |
+| `SidebarToggle` | `components/sidebar-toggle.tsx` | 侧边栏展开/收起按钮 |
+| `PreviewAttachment` | `components/preview-attachment.tsx` | 上传文件预览 |
 
 ---
 
@@ -133,23 +123,7 @@
 
 ---
 
-## 6. 数据库 Schema
-
-| 表名 | 用途 |
-|------|------|
-| `User` | 用户信息 |
-| `Chat` | 对话元数据 |
-| `Message_v2` | 消息 (parts 结构) |
-| `Vote_v2` | 消息投票 |
-| `Document` | Artifact 文档 (支持版本) |
-| `Suggestion` | 文档修改建议 |
-| `Stream` | 流恢复标识 |
-
-> 注意: `Message` 和 `Vote` (不带 `_v2`) 是已废弃的旧表。
-
----
-
-## 7. 自定义 Hooks
+## 6. 自定义 Hooks
 
 | Hook | 功能 |
 |------|------|
@@ -162,16 +136,14 @@
 
 ---
 
-## 8. API 路由
+## 7. API 路由
 
 | 路由 | 方法 | 功能 |
 |------|------|------|
-| `/api/chat` | POST | 发送消息，返回流式响应 |
-| `/api/chat` | DELETE | 删除对话 |
-| `/api/chat/[id]/stream` | GET | 恢复中断的流 |
-| `/api/document` | GET/POST | 文档 CRUD |
-| `/api/files/upload` | POST | 文件上传 (Vercel Blob) |
-| `/api/history` | GET | 获取历史对话列表 |
-| `/api/suggestions` | GET/POST | 获取/创建文档建议 |
-| `/api/vote` | GET/PATCH | 消息投票 |
-| `/api/auth/guest` | POST | 游客登录 |
+| `/api/legal/bootstrap` | POST | 初始化匿名 embed 会话 |
+| `/api/legal/interact` | POST | 发送法律对话消息 |
+| `/api/legal/upload` | POST | 代理上传附件到后端 |
+| `/api/legal/voice` | POST | 代理语音识别到后端 |
+| `/api/legal/cancel` | POST | 取消当前会话请求 |
+| `/api/legal/session/[uuid]` | GET | 查询会话状态 |
+| `/api/document/download/[documentId]` | GET | 代理下载文档 |

@@ -8,12 +8,6 @@ pnpm install          # 安装依赖
 pnpm dev              # 启动开发服务器 (localhost:3000)
 pnpm build            # 构建生产版本
 
-# 数据库
-pnpm db:migrate       # 应用数据库迁移
-pnpm db:generate      # 从 schema 生成迁移文件
-pnpm db:studio        # 打开 Drizzle Studio GUI
-pnpm db:push          # 直接推送 schema (仅开发)
-
 # 代码质量
 pnpm lint             # 检查代码规范
 pnpm format           # 自动修复格式问题
@@ -33,14 +27,7 @@ pnpm exec playwright test --project=e2e      # 按项目运行
 
 ```env
 # 必需
-AUTH_SECRET=your-secret-key          # NextAuth 密钥
-NEWAPI_BASE_URL=https://xxx/v1       # NewAPI 地址 (需以 /v1 结尾)
-NEWAPI_API_KEY=sk-xxx                # NewAPI 密钥
-POSTGRES_URL=postgres://xxx          # PostgreSQL 连接串
-BLOB_READ_WRITE_TOKEN=xxx            # Vercel Blob Token
-
-# 可选
-REDIS_URL=redis://localhost:6379/0   # Redis (启用流恢复)
+BASE_URL=http://localhost:8080       # 法律后端地址
 ```
 
 ---
@@ -70,14 +57,6 @@ export const chatModels: ChatModel[] = [
   // ...
 ];
 ```
-
----
-
-## 数据库 Schema 修改流程
-
-1. 修改 `lib/db/schema.ts`
-2. 生成迁移: `pnpm db:generate`
-3. 应用迁移: `pnpm db:migrate`
 
 ---
 

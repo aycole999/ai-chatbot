@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Chat SDK - 一个基于 Next.js 16 + Vercel AI SDK 构建的开源 AI 聊天模板。
+一个基于 Next.js 16 构建的法律文书助手前端，通过匿名 embed 会话代理接入法律后端。
 
 ### 核心特性
 - **多模态对话**: 支持文本、图片附件
@@ -16,11 +16,9 @@ Chat SDK - 一个基于 Next.js 16 + Vercel AI SDK 构建的开源 AI 聊天模�
 | 类别 | 技术 |
 |------|------|
 | 框架 | Next.js 16 (App Router) |
-| AI | Vercel AI SDK 5.x + NewAPI (OpenAI 兼容) |
-| 数据库 | PostgreSQL + Drizzle ORM |
-| 认证 | Auth.js (NextAuth v5 beta) |
+| AI | 对接后端法律服务 |
 | UI | shadcn/ui + Tailwind CSS 4.x + Radix UI |
-| 编辑器 | ProseMirror (文本) + CodeMirror (代码) |
+| 交互 | 流式会话、文件上传、语音输入 |
 | 测试 | Playwright |
 | 代码规范 | Ultracite (Biome) |
 | 包管理 | pnpm 9.x |
@@ -48,12 +46,10 @@ pnpm format  # 自动修复
 ### Architecture Patterns
 
 **Route Groups (Next.js App Router)**:
-- `app/(auth)/` - 认证 UI（`/login`、`/register`）与 Auth.js API（`/api/auth/*`）
-- `app/(legal)/` - Legal UI（`/`）与法律相关 API（`/api/legal/*`、`/api/textract*`），并提供 `/legal` → `/` 重定向
+- `app/(legal)/` - Legal UI（`/`）与法律相关 API（`/api/legal/*`），并提供 `/legal` → `/` 重定向
 
 **Key Directories**:
 - `lib/ai/` - AI 配置、模型定义、prompts、tools
-- `lib/db/` - Drizzle schema、queries、migrations
 - `components/` - React 组件 (聊天 UI、artifacts、编辑器)
 - `hooks/` - 自定义 React hooks
 
@@ -63,10 +59,6 @@ pnpm format  # 自动修复
 - `chat-model-reasoning` - 带推理链的模型
 - `title-model` - 生成标题的模型
 - `artifact-model` - 文档/artifact 生成模型
-
-**Database Schema** (`lib/db/schema.ts`):
-主表: `User`, `Chat`, `Message_v2`, `Vote_v2`, `Document`, `Suggestion`, `Stream`
-> 注意: `Message` 和 `Vote` (不带 `_v2`) 是已废弃的旧表
 
 ### Testing Strategy
 
@@ -111,24 +103,16 @@ pnpm exec playwright test --project=e2e      # 运行特定项目
 
 | 路由 | 方法 | 功能 |
 |------|------|------|
-| `/api/auth/[...nextauth]` | GET/POST | Auth.js (NextAuth) handler |
-| `/api/auth/guest` | GET | 游客登录 |
+| `/api/legal/bootstrap` | POST | 初始化匿名 embed 会话 |
 | `/api/legal/interact` | POST | 法律对话代理 API |
-| `/api/textract` | POST | 文本提取 API |
-| `/api/textract/oss-info` | GET | OSS URL 查询 |
+| `/api/legal/upload` | POST | 附件上传代理 |
+| `/api/legal/voice` | POST | 语音识别代理 |
 | `/ping` | GET | 健康检查 |
 
 ## Important Constraints
 
 ### 环境变量 (必需)
-- `AUTH_SECRET` - NextAuth secret
-- `NEWAPI_BASE_URL` - NewAPI 端点 (必须以 `/v1` 结尾)
-- `NEWAPI_API_KEY` - NewAPI 密钥
-- `POSTGRES_URL` - PostgreSQL 连接字符串
-- `BLOB_READ_WRITE_TOKEN` - Vercel Blob 存储 token
-
-### 环境变量 (可选)
-- `REDIS_URL` - 启用可恢复流
+- `BASE_URL` - 法律后端地址
 
 ### 文件上传限制
 - 当前仅支持 JPEG/PNG 图片
@@ -141,16 +125,11 @@ pnpm exec playwright test --project=e2e      # 运行特定项目
 ## External Dependencies
 
 ### 核心服务
-- **NewAPI**: OpenAI 兼容的 AI 后端服务
-- **Vercel Blob**: 文件存储服务
-- **PostgreSQL**: 主数据库
-- **Redis** (可选): 流恢复支持
+- **法律后端服务**: 提供 embed 会话、上传、语音与文书流程
 
 ### 主要 npm 包
 - `ai` (5.x): Vercel AI SDK
 - `next` (16.x): React 框架
-- `drizzle-orm`: 数据库 ORM
-- `next-auth` (5.x beta): 认证
 - `zod`: Schema 验证
 
 ## Commands Quick Reference
@@ -159,13 +138,7 @@ pnpm exec playwright test --project=e2e      # 运行特定项目
 # Development
 pnpm install          # 安装依赖
 pnpm dev              # 启动开发服务器 (localhost:3000)
-pnpm build            # 运行迁移并构建
-
-# Database
-pnpm db:migrate       # 应用迁移
-pnpm db:generate      # 生成迁移文件
-pnpm db:studio        # 打开 Drizzle Studio GUI
-pnpm db:push          # 直接推送 schema (仅开发环境)
+pnpm build            # 构建生产版本
 
 # Code Quality
 pnpm lint             # 检查格式和 lint

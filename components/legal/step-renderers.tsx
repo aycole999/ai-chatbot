@@ -264,6 +264,7 @@ interface CompletedDocumentProps {
   content: string;
   downloadUrl?: string;
   isLoading?: boolean;
+  onDownload: () => void | Promise<void>;
   onReset: () => void;
   onClose?: () => void;
 }
@@ -273,6 +274,7 @@ export function CompletedDocument({
   content,
   downloadUrl,
   isLoading,
+  onDownload,
   onReset,
   onClose,
 }: CompletedDocumentProps) {
@@ -444,7 +446,7 @@ export function CompletedDocument({
       return;
     }
 
-    window.open(downloadUrl, "_blank", "noopener,noreferrer");
+    Promise.resolve(onDownload()).catch(() => undefined);
   };
 
   return (

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Chat SDK - an open-source AI chatbot template built with Next.js 16 and the Vercel AI SDK. Uses NewAPI as the AI provider backend (OpenAI-compatible API).
+Legal document assistant frontend built with Next.js 16. The app integrates with the RuoYi legal backend through anonymous embed session proxy routes and uses NewAPI as the AI provider backend (OpenAI-compatible API).
 
 ## Commands
 
@@ -13,13 +13,7 @@ Chat SDK - an open-source AI chatbot template built with Next.js 16 and the Verc
 # Development
 pnpm install          # Install dependencies
 pnpm dev              # Start dev server with Turbo (localhost:3000)
-pnpm build            # Run migrations then build
-
-# Database (Drizzle ORM + PostgreSQL)
-pnpm db:migrate       # Apply migrations
-pnpm db:generate      # Generate migration from schema changes
-pnpm db:studio        # Open Drizzle Studio GUI
-pnpm db:push          # Push schema directly (dev only)
+pnpm build            # Build production bundle
 
 # Code Quality (Ultracite/Biome)
 pnpm lint             # Check formatting and lint issues
@@ -37,12 +31,10 @@ pnpm exec playwright test --project=routes
 ## Architecture
 
 ### Route Groups (Next.js App Router)
-- `app/(auth)/` - Authentication UI (`/login`, `/register`) and Auth.js routes (`/api/auth/*`)
 - `app/(legal)/` - Legal assistant UI (served at `/`) and related legal API routes
 
 ### Key Directories
 - `lib/ai/` - AI provider configuration, model definitions, prompts, and tools
-- `lib/db/` - Drizzle schema, queries, and migrations
 - `components/` - React components (chat UI, artifacts, editors)
 
 ### AI Provider Setup (`lib/ai/providers.ts`)
@@ -51,10 +43,6 @@ Uses NewAPI (OpenAI-compatible) configured via environment variables. Model alia
 - `chat-model-reasoning` - Model with chain-of-thought reasoning (uses `extractReasoningMiddleware`)
 - `title-model` - For generating chat titles
 - `artifact-model` - For document/artifact generation
-
-### Database Schema (`lib/db/schema.ts`)
-Main tables: `User`, `Chat`, `Message_v2`, `Vote_v2`, `Document`, `Suggestion`, `Stream`
-Note: `Message` and `Vote` (without `_v2`) are deprecated.
 
 ### AI Tools (`lib/ai/tools/`)
 Available tools for the chat model:
@@ -66,14 +54,9 @@ Available tools for the chat model:
 ## Environment Variables
 
 Required in `.env.local`:
-- `AUTH_SECRET` - NextAuth secret
-- `NEWAPI_BASE_URL` - NewAPI endpoint (must end with `/v1`)
-- `NEWAPI_API_KEY` - NewAPI key
-- `POSTGRES_URL` - PostgreSQL connection string
-- `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token
+- `BASE_URL` - Backend base URL for legal proxy routes
 
 Optional:
-- `REDIS_URL` - Enables resumable streams
 - `AGENT_DEFAULT_TIMEOUT` - Agent execution timeout in milliseconds (default: 60000)
 - `ENABLE_MULTI_AGENT` - Enable/disable multi-agent mode (default: true)
 - `ENABLE_MCP_TOOLS` - Enable MCP tools integration (default: false)

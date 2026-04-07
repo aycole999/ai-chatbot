@@ -22,7 +22,16 @@ export function getEmbedToken(request: Request): string | null {
  * 从浏览器请求中提取 Origin，用于转发给后端白名单校验
  */
 export function getOrigin(request: Request): string | null {
-  return request.headers.get("origin");
+  const origin = request.headers.get("origin");
+  if (origin) {
+    return origin;
+  }
+
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return null;
+  }
 }
 
 /**

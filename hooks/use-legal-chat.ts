@@ -217,22 +217,54 @@ function normalizeCompletedDownloadUrl(
   downloadUrl?: string,
   documentId?: string
 ): string {
-  if (downloadUrl?.startsWith("/document/download/")) {
-    return downloadUrl.replace(
-      "/document/download/",
+  const trimmedUrl = downloadUrl?.trim();
+
+  if (!trimmedUrl) {
+    if (documentId) {
+      return `/api/document/download/${encodeURIComponent(documentId)}`;
+    }
+
+    return "";
+  }
+
+  if (trimmedUrl.startsWith("/app/legal/embed/document/download/")) {
+    return trimmedUrl.replace(
+      "/app/legal/embed/document/download/",
       "/api/document/download/"
     );
   }
 
-  if (downloadUrl?.trim()) {
-    return downloadUrl;
+  if (trimmedUrl.startsWith("/document/download/")) {
+    return trimmedUrl.replace("/document/download/", "/api/document/download/");
   }
 
-  if (documentId) {
-    return `/api/document/download/${encodeURIComponent(documentId)}`;
+  if (trimmedUrl.startsWith("/api/document/download/")) {
+    return trimmedUrl;
   }
 
-  return "";
+  if (/^https?:\/\//.test(trimmedUrl)) {
+    try {
+      const parsedUrl = new URL(trimmedUrl);
+      if (
+        parsedUrl.pathname.startsWith("/app/legal/embed/document/download/")
+      ) {
+        return parsedUrl.pathname.replace(
+          "/app/legal/embed/document/download/",
+          "/api/document/download/"
+        );
+      }
+      if (parsedUrl.pathname.startsWith("/document/download/")) {
+        return parsedUrl.pathname.replace(
+          "/document/download/",
+          "/api/document/download/"
+        );
+      }
+    } catch {
+      return trimmedUrl;
+    }
+  }
+
+  return trimmedUrl;
 }
 
 /**

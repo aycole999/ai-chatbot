@@ -71,6 +71,60 @@ function getFileExtension(name: string) {
   return name.split(".").pop()?.toLowerCase() || "";
 }
 
+function decodeDownloadHeaderValue(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getDocumentDownloadRequestUrl(
+  documentId: string,
+  downloadUrl?: string
+): string {
+  if (documentId.trim()) {
+    return `/api/document/download/${encodeURIComponent(documentId)}`;
+  }
+
+  return downloadUrl?.trim() || "";
+}
+
+function getDownloadFileName(headers: Headers, documentId: string): string {
+  const downloadFileName = headers.get("download-filename");
+  if (downloadFileName?.trim()) {
+    return decodeDownloadHeaderValue(downloadFileName.trim());
+  }
+
+  const contentDisposition = headers.get("content-disposition") || "";
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeDownloadHeaderValue(utf8Match[1]);
+  }
+
+  const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1];
+  }
+
+  return `${documentId || "document"}.docx`;
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 0);
+}
+
 type UploadCredentialVo = {
   ossId: string;
   url: string;
@@ -437,6 +491,10 @@ interface StepInteractionProps {
     selectedType: string,
     selectedTypeLabel: string
   ) => void;
+  onDownloadCompletedDocument: (
+    documentId: string,
+    downloadUrl?: string
+  ) => Promise<void>;
   onClose: () => void;
   onReset: () => void;
 }
@@ -456,6 +514,7 @@ function StepInteraction({
   onSubmitSupplement,
   onSubmitFillQuestions,
   onSubmitPreQuestions,
+  onDownloadCompletedDocument,
   onClose,
   onReset,
 }: StepInteractionProps) {
@@ -524,6 +583,12 @@ function StepInteraction({
             downloadUrl={completedDocument.download_url}
             isLoading={isLoading}
             onClose={onClose}
+            onDownload={() =>
+              onDownloadCompletedDocument(
+                completedDocument.document_id,
+                completedDocument.download_url
+              )
+            }
             onReset={onReset}
           />
         );
@@ -783,6 +848,52 @@ export function LegalChat() {
     });
   }, []);
 
+  const downloadCompletedDocument = useCallback(
+    async (documentId: string, downloadUrl?: string) => {
+      const requestUrl = getDocumentDownloadRequestUrl(documentId, downloadUrl);
+      if (!requestUrl) {
+        toast.error("当前没有可下载的文书文件");
+        return;
+      }
+
+      try {
+        const { embedSessionToken } = await ensureSessionReady();
+        const response = await fetch(requestUrl, {
+          method: "GET",
+          headers: {
+            "x-embed-session-token": embedSessionToken,
+          },
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          const contentType = response.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const errorData = (await response.json().catch(() => ({}))) as {
+              error?: string;
+              msg?: string;
+            };
+            throw new Error(
+              errorData.error || errorData.msg || "文书下载失败，请稍后重试"
+            );
+          }
+
+          const text = await response.text().catch(() => "");
+          throw new Error(text || "文书下载失败，请稍后重试");
+        }
+
+        const blob = await response.blob();
+        const fileName = getDownloadFileName(response.headers, documentId);
+        triggerBrowserDownload(blob, fileName);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "文书下载失败，请稍后重试"
+        );
+      }
+    },
+    [ensureSessionReady]
+  );
+
   // 语音录制完成后处理（只填充文本，不添加附件）
   const handleVoiceRecordingComplete = useCallback(
     async (blob: Blob, _duration: number) => {
@@ -918,6 +1029,7 @@ export function LegalChat() {
                 isLoading={isLoading}
                 onClose={closeSession}
                 onContractCheck={handleContractCheck}
+                onDownloadCompletedDocument={downloadCompletedDocument}
                 onReset={startNewSession}
                 onSkipContract={skipContractCheck}
                 onSubmitFillQuestions={submitFillQuestions}

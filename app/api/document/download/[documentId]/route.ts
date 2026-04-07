@@ -1,34 +1,22 @@
-function getBaseUrl(): string {
-  const baseUrl = process.env.BASE_URL;
-  if (!baseUrl) {
-    throw new Error("BASE_URL is not configured");
-  }
-  return baseUrl;
-}
+import { NextResponse } from "next/server";
 
-function getAuthHeaders(): HeadersInit {
-  const token = process.env.BEARER_TOKEN;
-  const clientId = process.env.CLIENTID;
-  if (!token) {
-    throw new Error("BEARER_TOKEN is not configured");
-  }
-  if (!clientId) {
-    throw new Error("CLIENTID is not configured");
-  }
-  return {
-    Authorization: `Bearer ${token}`,
-    clientid: clientId,
-  };
-}
+import {
+  buildEmbedHeaders,
+  getBaseUrl,
+  getOrigin,
+  requireEmbedToken,
+  safeReadJson,
+} from "@/lib/legal/proxy-utils";
 
 function buildProxyHeaders(upstream: Response): Headers {
   const headers = new Headers();
   const copy = (name: string) => {
-    const v = upstream.headers.get(name);
-    if (v) {
-      headers.set(name, v);
+    const value = upstream.headers.get(name);
+    if (value) {
+      headers.set(name, value);
     }
   };
+
   copy("content-type");
   copy("content-disposition");
   copy("content-length");
@@ -38,34 +26,60 @@ function buildProxyHeaders(upstream: Response): Headers {
   return headers;
 }
 
+async function readErrorMessage(response: Response): Promise<string> {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    const payload = (await safeReadJson(response)) as {
+      error?: string;
+      msg?: string;
+    } | null;
+    return payload?.error || payload?.msg || "Download failed";
+  }
+
+  const text = await response.text().catch(() => "");
+  return text || "Download failed";
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ documentId: string }> }
 ) {
+  const tokenResult = requireEmbedToken(request);
+  if ("error" in tokenResult) {
+    return tokenResult.error;
+  }
+  const { token } = tokenResult;
+
   const { documentId } = await context.params;
-  const upstreamUrl = `${getBaseUrl()}/document/download/${encodeURIComponent(documentId)}`;
-
-  const upstream = await fetch(upstreamUrl, {
-    method: "GET",
-    headers: getAuthHeaders(),
-    signal: request.signal,
-    cache: "no-store",
-  });
-
-  if (!upstream.ok || !upstream.body) {
-    const text = await upstream.text().catch(() => "");
-    return new Response(text || "Download failed", {
-      status: upstream.status,
-      headers: {
-        "Content-Type":
-          upstream.headers.get("content-type") || "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-      },
-    });
+  if (!documentId) {
+    return NextResponse.json(
+      { error: "Document ID is required" },
+      { status: 400 }
+    );
   }
 
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: buildProxyHeaders(upstream),
-  });
+  try {
+    const upstreamUrl = `${getBaseUrl()}/app/legal/embed/document/download/${encodeURIComponent(documentId)}`;
+    const origin = getOrigin(request);
+    const upstream = await fetch(upstreamUrl, {
+      method: "GET",
+      headers: buildEmbedHeaders(token, origin),
+      signal: request.signal,
+      cache: "no-store",
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      const error = await readErrorMessage(upstream);
+      return NextResponse.json({ error }, { status: upstream.status });
+    }
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: buildProxyHeaders(upstream),
+    });
+  } catch (error) {
+    console.error("Legal document download API error:", error);
+    return NextResponse.json({ error: "Download failed" }, { status: 500 });
+  }
 }
