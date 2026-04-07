@@ -1,21 +1,21 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { forwardRef, type Ref } from "react";
-import { 
-  FileText, 
-  ArrowRight, 
-  Download, 
-  Copy, 
-  Printer, 
-  Edit3, 
+import {
+  ArrowRight,
   CheckCircle2,
+  Copy,
+  Download,
+  Edit3,
+  FileText,
+  Info,
+  Printer,
   Sparkles,
-  Info
 } from "lucide-react";
+import { forwardRef, type Ref } from "react";
 import { Streamdown } from "streamdown";
-import { Button } from "../ui/button";
 import { cn } from "@/lib/utils";
+import { Button } from "../ui/button";
 
 /**
  * 1. 咨询引导卡片 (ConsultationActionCard)
@@ -34,9 +34,9 @@ export function ConsultationActionCard({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="my-6 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background shadow-lg shadow-primary/5"
+      initial={{ opacity: 0, y: 20 }}
     >
       <div className="flex items-start gap-4 p-5">
         <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-inner">
@@ -59,11 +59,11 @@ export function ConsultationActionCard({
           <Info className="size-3" />
           预计 2 分钟内完成
         </div>
-        <Button 
-          onClick={onGenerate} 
-          disabled={isLoading}
-          size="sm"
+        <Button
           className="rounded-full px-5 bg-primary hover:bg-primary/90 shadow-md transition-all active:scale-95"
+          disabled={isLoading}
+          onClick={onGenerate}
+          size="sm"
         >
           {isLoading ? "正在准备..." : "开始生成"}
           <ArrowRight className="ml-2 size-4" />
@@ -85,7 +85,10 @@ function normalizeDocumentTitle(value: string): string {
     .trim();
 }
 
-function normalizeDocumentPreviewContent(content: string, title: string): string {
+function normalizeDocumentPreviewContent(
+  content: string,
+  title: string
+): string {
   const trimmed = content.trim();
   if (!trimmed) {
     return "";
@@ -93,10 +96,17 @@ function normalizeDocumentPreviewContent(content: string, title: string): string
 
   const lines = trimmed.split(/\r?\n/);
   const firstLine = lines[0]?.trim() || "";
-  const normalizedFirstLine = normalizeDocumentTitle(firstLine).replace(/\s+/g, "");
+  const normalizedFirstLine = normalizeDocumentTitle(firstLine).replace(
+    /\s+/g,
+    ""
+  );
   const normalizedTitle = normalizeDocumentTitle(title).replace(/\s+/g, "");
 
-  if (normalizedFirstLine && normalizedTitle && normalizedFirstLine === normalizedTitle) {
+  if (
+    normalizedFirstLine &&
+    normalizedTitle &&
+    normalizedFirstLine === normalizedTitle
+  ) {
     return lines.slice(1).join("\n").trim();
   }
 
@@ -130,7 +140,10 @@ const DocumentPaper = forwardRef<
   }
 >(function DocumentPaper({ title, content }, ref: Ref<HTMLDivElement>) {
   const normalizedTitle = normalizeDocumentTitle(title) || "法律文书";
-  const previewContent = normalizeDocumentPreviewContent(content, normalizedTitle);
+  const previewContent = normalizeDocumentPreviewContent(
+    content,
+    normalizedTitle
+  );
 
   return (
     <div
@@ -142,7 +155,9 @@ const DocumentPaper = forwardRef<
       <div className="mb-8 flex items-center justify-between border-b border-zinc-100 pb-4">
         <div className="flex items-center gap-2 opacity-30 grayscale">
           <Sparkles className="size-4" />
-          <span className="text-[10px] font-bold tracking-widest uppercase">Legal AI Engine</span>
+          <span className="text-[10px] font-bold tracking-widest uppercase">
+            Legal AI Engine
+          </span>
         </div>
         <div className="text-[10px] text-zinc-300">CONFIDENTIAL DOCUMENT</div>
       </div>
@@ -168,7 +183,9 @@ const DocumentPaper = forwardRef<
           <div className="space-y-1 text-right">
             <div className="h-0.5 w-32 bg-zinc-100" />
             <div className="text-[11px] text-zinc-400">申请人 (签章)</div>
-            <div className="text-[11px] text-zinc-400">日期：{new Date().toLocaleDateString()}</div>
+            <div className="text-[11px] text-zinc-400">
+              日期：{new Date().toLocaleDateString()}
+            </div>
           </div>
         </div>
       </div>
@@ -201,29 +218,62 @@ export function DocumentPreview({
   paperRef?: Ref<HTMLDivElement>;
 }) {
   return (
-    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-700" data-document-preview-root>
+    <div
+      className="space-y-6 animate-in fade-in zoom-in-95 duration-700"
+      data-document-preview-root
+    >
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1 print:hidden" data-document-preview-toolbar>
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 px-1 print:hidden"
+        data-document-preview-toolbar
+      >
         <div className="flex items-center gap-2">
           <div className="size-8 rounded-lg bg-green-100 flex items-center justify-center text-green-600">
             <CheckCircle2 className="size-5" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-foreground">文书生成成功</h3>
-            <p className="text-[11px] text-muted-foreground">已按专业格式排版</p>
+            <h3 className="text-base font-bold text-foreground">
+              文书生成成功
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              请在下方预览、复制、打印或下载 Word
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="size-9 rounded-full" onClick={onCopy} title="复制全文">
+          <Button
+            className="size-9 rounded-full"
+            onClick={onCopy}
+            size="icon"
+            title="复制全文"
+            variant="ghost"
+          >
             <Copy className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-9 rounded-full" onClick={onEdit} title="在线编辑">
+          <Button
+            className="size-9 rounded-full"
+            onClick={onEdit}
+            size="icon"
+            title="在线编辑"
+            variant="ghost"
+          >
             <Edit3 className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-9 rounded-full" onClick={onPrint} title="打印文书">
+          <Button
+            className="size-9 rounded-full"
+            onClick={onPrint}
+            size="icon"
+            title="打印文书"
+            variant="ghost"
+          >
             <Printer className="size-4" />
           </Button>
-          <Button variant="outline" size="sm" className="ml-1 rounded-full border-primary/20 hover:bg-primary/5 text-primary" onClick={onDownload}>
+          <Button
+            className="ml-1 rounded-full border-primary/20 hover:bg-primary/5 text-primary"
+            onClick={onDownload}
+            size="sm"
+            variant="outline"
+          >
             <Download className="mr-2 size-4" />
             下载 Word
           </Button>

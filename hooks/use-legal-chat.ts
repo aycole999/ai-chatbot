@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { readSSEStreamWithAbort } from "@/lib/legal/stream-parser";
 import type {
@@ -57,6 +57,22 @@ const initialState: LegalChatState = {
   completedDocument: undefined,
 };
 
+type BootstrapSessionData = {
+  sessionUuid: string;
+  embedSessionToken: string;
+  expiresIn: number;
+  idleExpiresIn: number;
+  nextStep: string;
+  message: string;
+  prompt: string;
+  limits: {
+    maxRounds: number;
+    maxInputChars: number;
+    uploadLimitPerMinute: number;
+    voiceLimitPerMinute: number;
+  };
+};
+
 /**
  * 根据 next_step 提取消息内容
  * 不同阶段的主要内容字段不同
@@ -89,7 +105,7 @@ function extractMessageContent(
       return data.message || "";
 
     case "completed":
-      return data.content || data.message || "文书已生成完成";
+      return getDocumentCompletedStatusMessage(data);
 
     case "session_closed":
       return data.message || "会话已结束，感谢您的使用！";
@@ -134,11 +150,67 @@ function hasVisibleAssistantMessage(content: string): boolean {
 }
 
 function normalizeDocumentTitle(value?: string): string {
-  return value
-    ?.replace(/^#+\s*/g, "")
-    .replace(/^\*+\s*/g, "")
-    .replace(/\*+$/g, "")
-    .trim() || "";
+  return (
+    value
+      ?.replace(/^#+\s*/g, "")
+      .replace(/^\*+\s*/g, "")
+      .replace(/\*+$/g, "")
+      .trim() || ""
+  );
+}
+
+function getDocumentDisplayTitle(data?: LegalResponseData): string {
+  return (
+    normalizeDocumentTitle(data?.data?.document?.name) ||
+    normalizeDocumentTitle(data?.doc_type) ||
+    ""
+  );
+}
+
+function getDocumentGeneratingStatusMessage(data?: LegalResponseData): string {
+  const documentTitle = getDocumentDisplayTitle(data);
+
+  return documentTitle
+    ? `正在生成${documentTitle}，请稍候。`
+    : "正在生成文书，请稍候。";
+}
+
+function getDocumentCompletedStatusMessage(data?: LegalResponseData): string {
+  const documentTitle = getDocumentDisplayTitle(data);
+
+  return documentTitle
+    ? `${documentTitle}已生成，请在下方预览、下载或重新生成。`
+    : "文书已生成，请在下方预览、下载或重新生成。";
+}
+
+function shouldUseDocumentStatusMessage(
+  originStep?: LegalStep,
+  resolvedStep?: LegalStep
+): boolean {
+  return originStep === "generate_document" || resolvedStep === "completed";
+}
+
+function getStreamingAssistantContent({
+  originStep,
+  resolvedStep,
+  streamingContent,
+  data,
+}: {
+  originStep?: LegalStep;
+  resolvedStep?: LegalStep;
+  streamingContent: string;
+  data?: LegalResponseData;
+}): string {
+  if (shouldUseDocumentStatusMessage(originStep, resolvedStep)) {
+    return resolvedStep === "completed"
+      ? getDocumentCompletedStatusMessage(data)
+      : getDocumentGeneratingStatusMessage(data);
+  }
+
+  return (
+    streamingContent ||
+    extractMessageContent(resolvedStep || originStep || "greeting", data || {})
+  );
 }
 
 function normalizeCompletedDownloadUrl(
@@ -257,10 +329,7 @@ function processStepData(
         ...baseUpdate,
         completedDocument: {
           document_id: data.document_id || "",
-          doc_type:
-            normalizeDocumentTitle(data.data?.document?.name) ||
-            normalizeDocumentTitle(data.doc_type) ||
-            "",
+          doc_type: getDocumentDisplayTitle(data),
           content:
             data.data?.document?.content ||
             data.content ||
@@ -284,14 +353,25 @@ function processStepData(
 export function useLegalChat() {
   const [state, setState] = useState<LegalChatState>(initialState);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef<string | null>(initialState.sessionId);
+  const embedSessionTokenRef = useRef<string | null>(
+    initialState.embedSessionToken
+  );
+  const initSessionPromiseRef =
+    useRef<Promise<BootstrapSessionData | null> | null>(null);
+
+  useEffect(() => {
+    sessionIdRef.current = state.sessionId;
+    embedSessionTokenRef.current = state.embedSessionToken;
+  }, [state.sessionId, state.embedSessionToken]);
 
   const postInteract = useCallback(
     (body: LegalInteractRequest, signal: AbortSignal) => {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-      if (state.embedSessionToken) {
-        headers["x-embed-session-token"] = state.embedSessionToken;
+      if (embedSessionTokenRef.current) {
+        headers["x-embed-session-token"] = embedSessionTokenRef.current;
       }
       return fetch("/api/legal/interact", {
         method: "POST",
@@ -300,29 +380,26 @@ export function useLegalChat() {
         signal,
       });
     },
-    [state.embedSessionToken]
+    []
   );
 
-  const postCancel = useCallback(
-    async (sessionId: string) => {
-      try {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-        };
-        if (state.embedSessionToken) {
-          headers["x-embed-session-token"] = state.embedSessionToken;
-        }
-        await fetch("/api/legal/cancel", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ sessionUuid: sessionId }),
-        });
-      } catch {
-        // best-effort
+  const postCancel = useCallback(async (sessionId: string) => {
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (embedSessionTokenRef.current) {
+        headers["x-embed-session-token"] = embedSessionTokenRef.current;
       }
-    },
-    [state.embedSessionToken]
-  );
+      await fetch("/api/legal/cancel", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ sessionUuid: sessionId }),
+      });
+    } catch {
+      // best-effort
+    }
+  }, []);
 
   // 添加用户消息
   const addUserMessage = useCallback(
@@ -417,6 +494,9 @@ export function useLegalChat() {
   const handleResponse = useCallback(
     (response: LegalApiResponse) => {
       const { session_id, next_step, data } = response;
+      if (session_id) {
+        sessionIdRef.current = session_id;
+      }
 
       // 提取消息内容
       const messageContent = extractMessageContent(next_step, data);
@@ -442,6 +522,112 @@ export function useLegalChat() {
     },
     [addAssistantMessage]
   );
+
+  const initSession = useCallback((): Promise<BootstrapSessionData | null> => {
+    if (initSessionPromiseRef.current) {
+      return initSessionPromiseRef.current;
+    }
+
+    const bootstrapPromise =
+      (async (): Promise<BootstrapSessionData | null> => {
+        setState((prev) => ({
+          ...prev,
+          isLoading: true,
+          error: null,
+        }));
+
+        try {
+          const controller = new AbortController();
+          abortControllerRef.current = controller;
+
+          const response = await fetch("/api/legal/bootstrap", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              captchaToken: "mock-pass",
+              clientNonce: `nonce-${Date.now()}-${generateUUID().slice(0, 8)}`,
+              pageUrl:
+                typeof window === "undefined" ? "" : window.location.href,
+              parentReferrer:
+                typeof document === "undefined" ? undefined : document.referrer,
+            }),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+              (errorData as { error?: string }).error ||
+                "Failed to initialize session"
+            );
+          }
+
+          const data = (await response.json()) as BootstrapSessionData;
+          sessionIdRef.current = data.sessionUuid;
+          embedSessionTokenRef.current = data.embedSessionToken;
+
+          setState((prev) => ({
+            ...prev,
+            sessionId: data.sessionUuid,
+            embedSessionToken: data.embedSessionToken,
+            limits: data.limits,
+            currentStep: "greeting" as const,
+            isLoading: false,
+            greeting: {
+              message: data.message || "",
+              prompt: data.prompt || "请描述您的问题或案件情况：",
+            },
+          }));
+
+          return data;
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            return null;
+          }
+
+          sessionIdRef.current = null;
+          embedSessionTokenRef.current = null;
+
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to initialize session",
+          }));
+          return null;
+        }
+      })();
+
+    initSessionPromiseRef.current = bootstrapPromise;
+    bootstrapPromise.finally(() => {
+      if (initSessionPromiseRef.current === bootstrapPromise) {
+        initSessionPromiseRef.current = null;
+      }
+    });
+    return bootstrapPromise;
+  }, []);
+
+  const ensureSessionReady = useCallback(async () => {
+    if (sessionIdRef.current && embedSessionTokenRef.current) {
+      return {
+        sessionId: sessionIdRef.current,
+        embedSessionToken: embedSessionTokenRef.current,
+      };
+    }
+
+    const bootstrapData = await initSession();
+    const sessionId = bootstrapData?.sessionUuid || sessionIdRef.current;
+    const embedSessionToken =
+      bootstrapData?.embedSessionToken || embedSessionTokenRef.current;
+
+    if (!sessionId || !embedSessionToken) {
+      throw new Error("Failed to initialize session");
+    }
+
+    return { sessionId, embedSessionToken };
+  }, [initSession]);
 
   // 针对中间阶段执行下一次明确 action，而不是盲目发送 continue
   const runStageAction = useCallback(
@@ -477,7 +663,14 @@ export function useLegalChat() {
             isStreaming: true,
           }));
 
-          addAssistantMessage("", step, undefined, true);
+          addAssistantMessage(
+            shouldUseDocumentStatusMessage(step)
+              ? getDocumentGeneratingStatusMessage()
+              : "",
+            step,
+            undefined,
+            true
+          );
 
           let streamingContent = "";
           let finalStep: LegalStep | undefined;
@@ -507,7 +700,10 @@ export function useLegalChat() {
                 case "content":
                   streamingContent += event.content || "";
                   updateLastAssistantMessage({
-                    content: streamingContent,
+                    content: getStreamingAssistantContent({
+                      originStep: step,
+                      streamingContent,
+                    }),
                   });
                   break;
 
@@ -533,13 +729,15 @@ export function useLegalChat() {
                     };
                   });
 
-                  const fallbackContent = extractMessageContent(
-                    event.next_step || "greeting",
-                    event.data || {}
-                  );
+                  const resolvedStep = event.next_step || step;
 
                   updateLastAssistantMessage({
-                    content: streamingContent || fallbackContent,
+                    content: getStreamingAssistantContent({
+                      originStep: step,
+                      resolvedStep,
+                      streamingContent,
+                      data: event.data || {},
+                    }),
                     step: event.next_step,
                     data: event.data,
                     is_streaming: false,
@@ -565,7 +763,9 @@ export function useLegalChat() {
                     isLoading: true,
                   }));
                   updateLastAssistantMessage({
-                    content: fallbackMessage,
+                    content: shouldUseDocumentStatusMessage(step)
+                      ? getDocumentGeneratingStatusMessage()
+                      : fallbackMessage,
                     is_streaming: false,
                   });
                   controller.abort();
@@ -627,7 +827,7 @@ export function useLegalChat() {
             if (upcoming) {
               return runStageAction(
                 retryData.session_id || latestSessionId,
-                result!.next_step
+                result.next_step
               );
             }
             return result;
@@ -673,37 +873,44 @@ export function useLegalChat() {
         }));
       }
     },
-    [addAssistantMessage, handleResponse, postInteract, updateLastAssistantMessage]
+    [
+      addAssistantMessage,
+      handleResponse,
+      postInteract,
+      updateLastAssistantMessage,
+    ]
   );
 
   // 发送消息
   const sendMessage = useCallback(
     async (message: string, attachments?: LegalAttachment[]) => {
-      // 取消之前的请求
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      const signal = controller.signal;
-
-      // 添加用户消息
       const trimmedMessage = message.trim();
       const hasAttachments = Boolean(attachments && attachments.length > 0);
-      if (trimmedMessage || hasAttachments) {
-        addUserMessage(trimmedMessage || "【附件】", attachments);
-      }
-
-      setState((prev) => ({
-        ...prev,
-        isLoading: true,
-        error: null,
-      }));
 
       try {
+        const { sessionId } = await ensureSessionReady();
+
+        // 取消之前的请求
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const signal = controller.signal;
+
+        if (trimmedMessage || hasAttachments) {
+          addUserMessage(trimmedMessage || "【附件】", attachments);
+        }
+
+        setState((prev) => ({
+          ...prev,
+          isLoading: true,
+          error: null,
+        }));
+
         const requestBody: LegalInteractRequest = {
-          session_id: state.sessionId || undefined,
+          session_id: sessionId || undefined,
           message: trimmedMessage || undefined,
           action: "continue",
           media_attachments: attachments?.map((a) => ({
@@ -733,12 +940,19 @@ export function useLegalChat() {
           }));
 
           // 先创建占位消息，避免 fallback/异常时无消息可更新
-          addAssistantMessage("", state.currentStep, undefined, true);
+          addAssistantMessage(
+            shouldUseDocumentStatusMessage(state.currentStep)
+              ? getDocumentGeneratingStatusMessage()
+              : "",
+            state.currentStep,
+            undefined,
+            true
+          );
 
           let streamingContent = "";
           let finalStep: LegalStep | undefined;
           let finalData: LegalResponseData | undefined;
-          let latestSessionId = state.sessionId || "";
+          let latestSessionId = sessionId || "";
           let doneReceived = false;
           let fallbackRequested = false;
           let fallbackMessage: string | undefined;
@@ -763,11 +977,14 @@ export function useLegalChat() {
                 case "content":
                   streamingContent += event.content || "";
                   updateLastAssistantMessage({
-                    content: streamingContent,
+                    content: getStreamingAssistantContent({
+                      originStep: state.currentStep,
+                      streamingContent,
+                    }),
                   });
                   break;
 
-                case "done":
+                case "done": {
                   doneReceived = true;
                   finalStep = event.next_step;
                   finalData = event.data;
@@ -791,18 +1008,20 @@ export function useLegalChat() {
                   });
 
                   // 更新消息内容
+                  const resolvedStep = event.next_step || state.currentStep;
                   updateLastAssistantMessage({
-                    content:
-                      streamingContent ||
-                      extractMessageContent(
-                        event.next_step || "greeting",
-                        event.data || {}
-                      ),
+                    content: getStreamingAssistantContent({
+                      originStep: state.currentStep,
+                      resolvedStep,
+                      streamingContent,
+                      data: event.data || {},
+                    }),
                     step: event.next_step,
                     data: event.data,
                     is_streaming: false,
                   });
                   break;
+                }
 
                 case "error":
                   setState((prev) => ({
@@ -822,7 +1041,9 @@ export function useLegalChat() {
                     isLoading: true,
                   }));
                   updateLastAssistantMessage({
-                    content: fallbackMessage,
+                    content: shouldUseDocumentStatusMessage(state.currentStep)
+                      ? getDocumentGeneratingStatusMessage()
+                      : fallbackMessage,
                     is_streaming: false,
                   });
                   controller.abort();
@@ -873,7 +1094,7 @@ export function useLegalChat() {
             });
 
             updateLastAssistantMessage({
-              content,
+              ...(hasVisibleAssistantMessage(content) ? { content } : {}),
               step: next_step,
               data: respData,
               is_streaming: false,
@@ -882,7 +1103,10 @@ export function useLegalChat() {
             // 自动续发
             const upcoming = resolveAutomaticStageRequest(next_step);
             if (upcoming) {
-              return runStageAction(data.session_id || state.sessionId || "", next_step);
+              return runStageAction(
+                data.session_id || state.sessionId || "",
+                next_step
+              );
             }
             return { next_step, data: respData };
           }
@@ -916,7 +1140,10 @@ export function useLegalChat() {
           ? resolveAutomaticStageRequest(result.next_step)
           : null;
         if (result && upcoming) {
-          return runStageAction(data.session_id || state.sessionId || "", result.next_step);
+          return runStageAction(
+            data.session_id || sessionId || "",
+            result.next_step
+          );
         }
 
         return result;
@@ -942,6 +1169,7 @@ export function useLegalChat() {
       handleResponse,
       runStageAction,
       postInteract,
+      ensureSessionReady,
     ]
   );
 
@@ -977,7 +1205,10 @@ export function useLegalChat() {
         ? resolveAutomaticStageRequest(result.next_step)
         : null;
       if (result && upcoming) {
-        return runStageAction(data.session_id || state.sessionId || "", result.next_step);
+        return runStageAction(
+          data.session_id || state.sessionId || "",
+          result.next_step
+        );
       }
       return result;
     } catch (error) {
@@ -1095,7 +1326,10 @@ export function useLegalChat() {
         ? resolveAutomaticStageRequest(result.next_step)
         : null;
       if (result && upcoming) {
-        return runStageAction(data.session_id || state.sessionId || "", result.next_step);
+        return runStageAction(
+          data.session_id || state.sessionId || "",
+          result.next_step
+        );
       }
       return result;
     } catch (error) {
@@ -1332,86 +1566,11 @@ export function useLegalChat() {
       abortControllerRef.current = null;
     }
 
+    sessionIdRef.current = null;
+    embedSessionTokenRef.current = null;
+    initSessionPromiseRef.current = null;
     setState(initialState);
   }, []);
-
-  // 初始化会话（调用 bootstrap 获取 embed session token）
-  const initSession = useCallback(async () => {
-    setState((prev) => ({
-      ...prev,
-      isLoading: true,
-      error: null,
-    }));
-
-    try {
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      const response = await fetch("/api/legal/bootstrap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          captchaToken: "mock-pass",
-          clientNonce: `nonce-${Date.now()}-${generateUUID().slice(0, 8)}`,
-          pageUrl: typeof window === "undefined" ? "" : window.location.href,
-          parentReferrer:
-            typeof document === "undefined" ? undefined : document.referrer,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          (errorData as { error?: string }).error ||
-            "Failed to initialize session"
-        );
-      }
-
-      const data = (await response.json()) as {
-        sessionUuid: string;
-        embedSessionToken: string;
-        expiresIn: number;
-        idleExpiresIn: number;
-        nextStep: string;
-        message: string;
-        prompt: string;
-        limits: {
-          maxRounds: number;
-          maxInputChars: number;
-          uploadLimitPerMinute: number;
-          voiceLimitPerMinute: number;
-        };
-      };
-
-      setState((prev) => ({
-        ...prev,
-        sessionId: data.sessionUuid,
-        embedSessionToken: data.embedSessionToken,
-        limits: data.limits,
-        currentStep: "greeting" as const,
-        isLoading: false,
-        greeting: {
-          message: data.message || "",
-          prompt: data.prompt || "请描述您的问题或案件情况：",
-        },
-      }));
-
-      addAssistantMessage(data.message || "欢迎使用法律文书助手", "greeting", {
-        message: data.message,
-        prompt: data.prompt,
-      });
-    } catch (error) {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to initialize session",
-      }));
-    }
-  }, [addAssistantMessage]);
 
   return {
     // 状态
@@ -1428,5 +1587,6 @@ export function useLegalChat() {
     stopStream,
     reset,
     initSession,
+    ensureSessionReady,
   };
 }

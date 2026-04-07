@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MicIcon, PaperclipIcon, FileText } from "lucide-react";
+import { FileText, MicIcon, PaperclipIcon } from "lucide-react";
 import {
   type ChangeEvent,
   useCallback,
@@ -79,6 +79,8 @@ type UploadCredentialVo = {
   contentType: string;
 };
 
+const AUTO_SCROLL_THRESHOLD_PX = 96;
+
 // ============================================================
 // 法律聊天欢迎语
 // ============================================================
@@ -90,12 +92,12 @@ function LegalGreeting() {
     >
       <motion.div
         animate={{ opacity: 1, scale: 1 }}
-        initial={{ opacity: 0, scale: 0.9 }}
         className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-primary shadow-xl shadow-primary/20"
+        initial={{ opacity: 0, scale: 0.9 }}
       >
         <SparklesIcon className="text-white" size={32} />
       </motion.div>
-      
+
       <motion.div
         animate={{ opacity: 1, y: 0 }}
         className="font-black text-3xl md:text-4xl tracking-tight text-foreground"
@@ -115,7 +117,7 @@ function LegalGreeting() {
         描述您的案件细节，我将为您提供法律分析，并自动构建符合法院要求的专业法律文书。
       </motion.div>
 
-      <motion.div 
+      {/* <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
@@ -135,9 +137,35 @@ function LegalGreeting() {
             </div>
           </div>
         ))}
-      </motion.div>
+      </motion.div> */}
     </div>
   );
+}
+
+function StreamingDots() {
+  return (
+    <span aria-hidden="true" className="inline-flex items-center gap-1">
+      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0ms]" />
+      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:180ms]" />
+      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:360ms]" />
+    </span>
+  );
+}
+
+function getStreamingHeaderLabel(step?: LegalStep) {
+  if (step === "generate_document") {
+    return "正在生成";
+  }
+
+  return "生成中";
+}
+
+function getStreamingFooterLabel(step?: LegalStep) {
+  if (step === "generate_document") {
+    return "正在生成文书内容";
+  }
+
+  return null;
 }
 
 // ============================================================
@@ -151,8 +179,18 @@ function LegalMessageItem({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
+  const isAssistant = message.role === "assistant";
   const isFormSubmissionMessage = message.type === "form_submission";
   const hasMessageContent = message.content.trim().length > 0;
+  const isAssistantStreaming = Boolean(
+    isAssistant && isStreaming && message.is_streaming
+  );
+  const streamingHeaderLabel = isAssistantStreaming
+    ? getStreamingHeaderLabel(message.step)
+    : null;
+  const streamingFooterLabel = isAssistantStreaming
+    ? getStreamingFooterLabel(message.step)
+    : null;
 
   return (
     <div
@@ -164,10 +202,15 @@ function LegalMessageItem({
           "flex-row-reverse": isUser,
         })}
       >
-        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors", {
-          "bg-primary text-primary-foreground border-primary/20": isUser,
-          "bg-background text-primary border-border": !isUser,
-        })}>
+        <div
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors",
+            {
+              "bg-primary text-primary-foreground border-primary/20": isUser,
+              "bg-background text-primary border-border": !isUser,
+            }
+          )}
+        >
           {isUser ? (
             <span className="text-[10px] font-bold">ME</span>
           ) : (
@@ -181,6 +224,19 @@ function LegalMessageItem({
             "items-start w-full": !isUser,
           })}
         >
+          {streamingHeaderLabel && (
+            <div className="flex items-center gap-2 px-1 text-[11px] font-medium text-muted-foreground">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-muted/20 px-2.5 py-1">
+                <span className="text-foreground/80">
+                  {streamingHeaderLabel}
+                </span>
+                <span className="text-primary/80">
+                  <StreamingDots />
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* 用户附件 */}
           {message.attachments && message.attachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -214,44 +270,60 @@ function LegalMessageItem({
           {/* 消息内容 */}
           {(!isUser || (message.type === "text" && hasMessageContent)) && (
             <div
-              className={cn("rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed transition-all", {
-                "bg-primary text-primary-foreground shadow-lg shadow-primary/10": isUser,
-                "bg-transparent px-0 py-1": !isUser,
-              })}
+              className={cn(
+                "rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed transition-all",
+                {
+                  "bg-primary text-primary-foreground shadow-lg shadow-primary/10":
+                    isUser,
+                  "bg-transparent px-0 py-1": !isUser,
+                }
+              )}
             >
               {isUser ? (
                 message.content
               ) : (
                 <div className="prose prose-zinc dark:prose-invert prose-headings:font-bold prose-headings:text-foreground prose-p:text-muted-foreground prose-p:leading-7 max-w-none">
                   <Response>{message.content}</Response>
-                  {isStreaming && message.is_streaming && (
-                    <span className="inline-block animate-pulse text-primary ml-1">▊</span>
-                  )}
                 </div>
               )}
             </div>
           )}
 
+          {streamingFooterLabel && (
+            <div className="ml-1 inline-flex items-center gap-2 rounded-full border border-primary/10 bg-primary/5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+              <span className="text-primary/80">
+                <StreamingDots />
+              </span>
+              <span>{streamingFooterLabel}</span>
+            </div>
+          )}
+
           {/* 已提交表单（只读） */}
-          {isUser && isFormSubmissionMessage && message.formData?.type === "pre_questions" && (
-            <PreQuestionsSubmitted
-              answers={message.formData.answers}
-              questions={message.formData.questions}
-              selectedTypeLabel={message.formData.selectedTypeLabel}
-            />
-          )}
-          {isUser && isFormSubmissionMessage && message.formData?.type === "fill_questions" && (
-            <FillQuestionsSubmitted
-              questions={message.formData.questions}
-              values={message.formData.values}
-            />
-          )}
-          {isUser && isFormSubmissionMessage && message.formData?.type === "supplement_info" && (
-            <SupplementSubmitted
-              fields={message.formData.fields}
-              values={message.formData.values}
-            />
-          )}
+          {isUser &&
+            isFormSubmissionMessage &&
+            message.formData?.type === "pre_questions" && (
+              <PreQuestionsSubmitted
+                answers={message.formData.answers}
+                questions={message.formData.questions}
+                selectedTypeLabel={message.formData.selectedTypeLabel}
+              />
+            )}
+          {isUser &&
+            isFormSubmissionMessage &&
+            message.formData?.type === "fill_questions" && (
+              <FillQuestionsSubmitted
+                questions={message.formData.questions}
+                values={message.formData.values}
+              />
+            )}
+          {isUser &&
+            isFormSubmissionMessage &&
+            message.formData?.type === "supplement_info" && (
+              <SupplementSubmitted
+                fields={message.formData.fields}
+                values={message.formData.values}
+              />
+            )}
 
           {/* 附件分析结果 */}
           {message.data?.attachment_analysis &&
@@ -294,7 +366,9 @@ function ThinkingIndicator() {
               <span className="size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:150ms]" />
               <span className="size-1.5 animate-bounce rounded-full bg-primary [animation-delay:300ms]" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-widest text-primary/70 animate-pulse">正在检索法律依据...</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-primary/70 animate-pulse">
+              正在检索法律依据...
+            </span>
           </div>
         </div>
       </div>
@@ -317,10 +391,10 @@ function MessageActionBar({
   return (
     <div className="pl-10">
       <ConsultationActionCard
-        title="生成专业法律文书"
         description="基于以上咨询信息，我已经为您准备好了文书初稿的生成方案。您可以立即开始生成正式文书。"
-        onGenerate={onGenerateDocument}
         isLoading={isLoading}
+        onGenerate={onGenerateDocument}
+        title="生成专业法律文书"
       />
     </div>
   );
@@ -475,7 +549,6 @@ export function LegalChat() {
     isLoading,
     isStreaming,
     error,
-    embedSessionToken,
     // 各阶段专属状态
     canGenerateDocument,
     canSkipContract,
@@ -495,50 +568,94 @@ export function LegalChat() {
     closeSession,
     stopStream,
     reset,
-    initSession,
+    ensureSessionReady,
   } = useLegalChat();
 
   const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<LegalAttachment[]>([]);
   const [uploadQueue, setUploadQueue] = useState<string[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const hasInitializedRef = useRef(false);
+  const shouldAutoScrollRef = useRef(true);
 
-  // 初始化会话（使用 ref 防止 React Strict Mode 下重复调用）
-  useEffect(() => {
-    if (hasInitializedRef.current) {
+  const syncAutoScrollState = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      shouldAutoScrollRef.current = true;
       return;
     }
-    hasInitializedRef.current = true;
-    initSession();
-  }, [initSession]);
+
+    const distanceToBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceToBottom <= AUTO_SCROLL_THRESHOLD_PX;
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    syncAutoScrollState();
+  }, [syncAutoScrollState]);
+
+  const clearComposer = useCallback(() => {
+    setInputValue("");
+    setUploadQueue([]);
+    setAttachments((prev) => {
+      for (const attachment of prev) {
+        if (attachment.local_url) {
+          URL.revokeObjectURL(attachment.local_url);
+        }
+      }
+      return [];
+    });
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const startNewSession = useCallback(() => {
+    shouldAutoScrollRef.current = true;
+    clearComposer();
+    reset();
+  }, [clearComposer, reset]);
 
   // 监听新建会话事件
   useEffect(() => {
     const handleNewSession = () => {
-      // 重置状态并初始化新会话
-      reset();
-      hasInitializedRef.current = false;
-      // 下一个 tick 初始化新会话
-      setTimeout(() => {
-        hasInitializedRef.current = true;
-        initSession();
-      }, 0);
+      startNewSession();
     };
 
     window.addEventListener("legal-new-session", handleNewSession);
     return () => {
       window.removeEventListener("legal-new-session", handleNewSession);
     };
-  }, [reset, initSession]);
+  }, [startNewSession]);
 
-  // 滚动到底部
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 messages 和 currentStep 作为触发条件
+  // 仅在用户仍停留在底部附近时自动跟随输出，避免流式回复期间抢走滚动位置
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖消息和加载状态触发滚动同步
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, currentStep]);
+    if (!shouldAutoScrollRef.current) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      scrollToBottom(isStreaming ? "auto" : "smooth");
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [messages, currentStep, isLoading, isStreaming, error, scrollToBottom]);
 
   // 发送消息
   const handleSend = async () => {
@@ -551,6 +668,7 @@ export function LegalChat() {
       return;
     }
 
+    shouldAutoScrollRef.current = true;
     setInputValue("");
     await sendMessage(
       trimmedValue,
@@ -567,6 +685,8 @@ export function LegalChat() {
   // 上传文件到 Legal Upload（写入 OSS，返回 ossId/url）
   const uploadFilesToLegalUpload = useCallback(
     async (files: File[]): Promise<LegalAttachment[]> => {
+      const { embedSessionToken } = await ensureSessionReady();
+
       const formData = new FormData();
       for (const file of files) {
         formData.append("files", file, file.name);
@@ -609,7 +729,7 @@ export function LegalChat() {
       }
       return list;
     },
-    [embedSessionToken]
+    [ensureSessionReady]
   );
 
   // 处理文件选择
@@ -667,6 +787,8 @@ export function LegalChat() {
   const handleVoiceRecordingComplete = useCallback(
     async (blob: Blob, _duration: number) => {
       try {
+        const { embedSessionToken } = await ensureSessionReady();
+
         const file = new File([blob], `voice_${Date.now()}.webm`, {
           type: blob.type,
         });
@@ -704,7 +826,7 @@ export function LegalChat() {
         toast.error("语音识别失败");
       }
     },
-    [embedSessionToken]
+    [ensureSessionReady]
   );
 
   // 使用语音输入 hook
@@ -748,7 +870,11 @@ export function LegalChat() {
   return (
     <div className="flex h-full flex-col">
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className="flex-1 overflow-y-auto"
+        onScroll={handleScroll}
+        ref={scrollContainerRef}
+      >
         <div className="mx-auto max-w-3xl px-4 py-4">
           {/* 空状态 */}
           {messages.length === 0 && !isLoading && <LegalGreeting />}
@@ -792,7 +918,7 @@ export function LegalChat() {
                 isLoading={isLoading}
                 onClose={closeSession}
                 onContractCheck={handleContractCheck}
-                onReset={reset}
+                onReset={startNewSession}
                 onSkipContract={skipContractCheck}
                 onSubmitFillQuestions={submitFillQuestions}
                 onSubmitPreQuestions={submitPreQuestions}
@@ -803,8 +929,6 @@ export function LegalChat() {
               />
             )}
           </div>
-
-          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -830,7 +954,8 @@ export function LegalChat() {
                     <div className="group relative" key={attachment.oss_id}>
                       <PreviewAttachment
                         attachment={{
-                          url: attachment.local_url || attachment.file_url || "",
+                          url:
+                            attachment.local_url || attachment.file_url || "",
                           name: attachment.file_name,
                           contentType: attachment.content_type,
                         }}
@@ -863,18 +988,16 @@ export function LegalChat() {
                     />
                   </div>
                 ) : (
-                  <>
-                    <Textarea
-                      className="min-h-[44px] max-h-[200px] border-none bg-transparent px-3 py-3 focus-visible:ring-0 resize-none text-[15px]"
-                      disabled={isLoading || isStreaming}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="请描述您的法律问题..."
-                      ref={textareaRef}
-                      rows={1}
-                      value={inputValue}
-                    />
-                  </>
+                  <Textarea
+                    className="min-h-[44px] max-h-[200px] border-none bg-transparent px-3 py-3 focus-visible:ring-0 resize-none text-[15px]"
+                    disabled={isLoading || isStreaming}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="请描述您的法律问题..."
+                    ref={textareaRef}
+                    rows={1}
+                    value={inputValue}
+                  />
                 )}
 
                 {!isRecordingMode && (
@@ -967,7 +1090,12 @@ export function LegalChat() {
             {/* 重置按钮 */}
             <div className="mt-3 flex items-center justify-end px-1">
               {messages.length > 0 && (
-                <Button className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={reset} size="sm" variant="ghost">
+                <Button
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={startNewSession}
+                  size="sm"
+                  variant="ghost"
+                >
                   清空对话
                 </Button>
               )}
@@ -981,7 +1109,7 @@ export function LegalChat() {
         <div className="border-t bg-background p-4">
           <div className="mx-auto max-w-3xl text-center">
             <p className="mb-4 text-green-600">文书已生成完成！</p>
-            <Button onClick={reset} variant="outline">
+            <Button onClick={startNewSession} variant="outline">
               开始新的咨询
             </Button>
           </div>

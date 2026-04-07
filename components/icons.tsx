@@ -1,3 +1,9 @@
+import type { SVGProps } from "react";
+
+type IconProps = Omit<SVGProps<SVGSVGElement>, "height" | "width"> & {
+  size?: number;
+};
+
 export const BotIcon = () => {
   return (
     <svg
@@ -785,11 +791,12 @@ export const SidebarLeftIcon = ({ size = 16 }: { size?: number }) => (
   </svg>
 );
 
-export const PlusIcon = ({ size = 16 }: { size?: number }) => (
+export const PlusIcon = ({ size = 16, style, ...props }: IconProps) => (
   <svg
+    {...props}
     height={size}
     strokeLinejoin="round"
-    style={{ color: "currentcolor" }}
+    style={{ color: "currentcolor", ...style }}
     viewBox="0 0 16 16"
     width={size}
   >
@@ -870,11 +877,12 @@ export const ChevronDownIcon = ({ size = 16 }: { size?: number }) => (
   </svg>
 );
 
-export const SparklesIcon = ({ size = 16 }: { size?: number }) => (
+export const SparklesIcon = ({ size = 16, style, ...props }: IconProps) => (
   <svg
+    {...props}
     height={size}
     strokeLinejoin="round"
-    style={{ color: "currentcolor" }}
+    style={{ color: "currentcolor", ...style }}
     viewBox="0 0 16 16"
     width={size}
   >

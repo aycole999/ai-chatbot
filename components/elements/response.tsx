@@ -360,7 +360,7 @@ export function Response({ className, children, ...props }: ResponseProps) {
           continue;
         }
 
-        next[id] = true;
+        next[id] = false;
         changed = true;
       }
 
@@ -394,7 +394,7 @@ export function Response({ className, children, ...props }: ResponseProps) {
         );
       }
 
-      const isOpen = openSections[node.id] ?? true;
+      const isOpen = openSections[node.id] ?? false;
 
       return (
         <CollapsibleSection
@@ -404,7 +404,7 @@ export function Response({ className, children, ...props }: ResponseProps) {
           onToggle={() =>
             setOpenSections((prev) => ({
               ...prev,
-              [node.id]: !(prev[node.id] ?? true),
+              [node.id]: !(prev[node.id] ?? false),
             }))
           }
           renderNodes={renderNodes}
