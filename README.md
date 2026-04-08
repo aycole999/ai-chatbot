@@ -32,3 +32,33 @@ pnpm install
 pnpm build
 pnpm start
 ```
+
+## Docker Deployment
+
+仓库已补充 `script/docker/` 部署目录，用于和后端现有 docker/nginx 编排方式对齐。
+如果需要在 IDEA 中直接构建镜像，推荐使用仓库根目录的 `Dockerfile`。
+
+推荐链路：
+
+```text
+browser -> backend nginx -> ai-chatbot -> backend nginx /prod-api -> ruoyi-server
+```
+
+快速开始：
+
+```bash
+./script/docker/build-image.sh
+cd script/docker
+cp .env.example .env
+docker compose up -d
+```
+
+默认关键变量：
+
+```bash
+AI_CHATBOT_IMAGE=ai-chatbot:latest
+BACKEND_DOCKER_NETWORK=legal_ruoyi-net
+BASE_URL=http://nginx-web/prod-api
+```
+
+如果需要基于源码本地构建镜像，则使用 `script/docker/docker-compose.build.yml`。后端 nginx 并入示例见 `script/docker/nginx/chat.server.conf.example`，详细说明见 `script/docker/README.md`。

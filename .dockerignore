@@ -1,0 +1,9 @@
+.git
+.gitignore
+.next
+node_modules
+coverage
+playwright-report
+test-results
+pnpm-debug.log*
+script/docker/.env
