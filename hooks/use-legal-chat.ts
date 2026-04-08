@@ -57,6 +57,8 @@ const initialState: LegalChatState = {
   completedDocument: undefined,
 };
 
+type CompletedDocumentState = NonNullable<LegalChatState["completedDocument"]>;
+
 type BootstrapSessionData = {
   sessionUuid: string;
   embedSessionToken: string;
@@ -72,6 +74,24 @@ type BootstrapSessionData = {
     voiceLimitPerMinute: number;
   };
 };
+
+function resolveBootstrapStep(nextStep?: string): LegalStep {
+  switch (nextStep) {
+    case "greeting":
+    case "consulting":
+    case "check_info":
+    case "fill_questions":
+    case "check_labor_contract":
+    case "supplement_info":
+    case "pre_questions":
+    case "generate_document":
+    case "completed":
+    case "session_closed":
+      return nextStep;
+    default:
+      return "consulting";
+  }
+}
 
 /**
  * 根据 next_step 提取消息内容
@@ -161,7 +181,7 @@ function normalizeDocumentTitle(value?: string): string {
 
 function getDocumentDisplayTitle(data?: LegalResponseData): string {
   return (
-    normalizeDocumentTitle(data?.data?.document?.name) ||
+    normalizeDocumentTitle(data?.document?.name) ||
     normalizeDocumentTitle(data?.doc_type) ||
     ""
   );
@@ -176,11 +196,20 @@ function getDocumentGeneratingStatusMessage(data?: LegalResponseData): string {
 }
 
 function getDocumentCompletedStatusMessage(data?: LegalResponseData): string {
+  const documentError = data?.document_error?.trim();
+  if (documentError) {
+    return documentError;
+  }
+
+  if (!data?.document?.content?.trim()) {
+    return "文书生成失败，请开启新对话后重试。";
+  }
+
   const documentTitle = getDocumentDisplayTitle(data);
 
   return documentTitle
-    ? `${documentTitle}已生成，请在下方预览、下载或重新生成。`
-    : "文书已生成，请在下方预览、下载或重新生成。";
+    ? `${documentTitle}已生成，请在下方预览、下载或开始新对话。`
+    : "文书已生成，请在下方预览、下载或开始新对话。";
 }
 
 function shouldUseDocumentStatusMessage(
@@ -213,17 +242,10 @@ function getStreamingAssistantContent({
   );
 }
 
-function normalizeCompletedDownloadUrl(
-  downloadUrl?: string,
-  documentId?: string
-): string {
+function normalizeCompletedDownloadUrl(downloadUrl?: string): string {
   const trimmedUrl = downloadUrl?.trim();
 
   if (!trimmedUrl) {
-    if (documentId) {
-      return `/api/document/download/${encodeURIComponent(documentId)}`;
-    }
-
     return "";
   }
 
@@ -267,6 +289,40 @@ function normalizeCompletedDownloadUrl(
   return trimmedUrl;
 }
 
+function buildCompletedDocumentState(
+  data: LegalResponseData
+): CompletedDocumentState {
+  const documentContent = data.document?.content || "";
+  const hasDocumentContent = documentContent.trim().length > 0;
+  const normalizedDownloadUrl = normalizeCompletedDownloadUrl(
+    data.download_url
+  );
+  const documentError = data.document_error?.trim() || null;
+  const hasDocument = Boolean(data.document);
+  const hasDocumentId = Boolean(data.document_id?.trim());
+  const canDownload =
+    !documentError &&
+    hasDocument &&
+    hasDocumentId &&
+    hasDocumentContent &&
+    normalizedDownloadUrl.length > 0;
+
+  return {
+    document_id: data.document_id || "",
+    doc_type: getDocumentDisplayTitle(data),
+    document_name: data.document?.name || "",
+    document_type: data.document?.type || "",
+    content: documentContent,
+    download_url: normalizedDownloadUrl,
+    document_error:
+      documentError ||
+      (canDownload
+        ? null
+        : "当前文书结构不完整，暂时无法下载，请开启新对话后重试。"),
+    can_download: canDownload,
+  };
+}
+
 /**
  * 根据 next_step 处理状态更新
  * 每个阶段有独立的状态处理逻辑
@@ -293,21 +349,21 @@ function processStepData(
     case "consulting":
       return {
         ...baseUpdate,
-        canGenerateDocument: Boolean(data.data?.can_generate_document),
-        collectedFacts: data.data?.collected_facts ?? null,
+        canGenerateDocument: Boolean(data.can_generate_document),
+        collectedFacts: data.collected_facts ?? null,
       };
 
     case "fill_questions": {
       // 后端返回多种格式：
       // 1. data.fill_questions — FillQuestion[]
       // 2. data.questions — 通用 questions 数组
-      // 3. data.data.missing_info — 上游格式 {field, label, required}[]
+      // 3. data.missing_info — 严格业务结构 {field, label, required}[]
       let fillQs: FillQuestion[] = [];
 
       if (data.fill_questions && data.fill_questions.length > 0) {
         fillQs = data.fill_questions;
-      } else if (data.data?.missing_info && data.data.missing_info.length > 0) {
-        fillQs = data.data.missing_info.map((item) => ({
+      } else if (data.missing_info && data.missing_info.length > 0) {
+        fillQs = data.missing_info.map((item) => ({
           question_id: item.field,
           element: item.field,
           question: item.label,
@@ -359,19 +415,7 @@ function processStepData(
     case "completed":
       return {
         ...baseUpdate,
-        completedDocument: {
-          document_id: data.document_id || "",
-          doc_type: getDocumentDisplayTitle(data),
-          content:
-            data.data?.document?.content ||
-            data.content ||
-            data.document_content ||
-            "",
-          download_url: normalizeCompletedDownloadUrl(
-            data.download_url,
-            data.document_id
-          ),
-        },
+        completedDocument: buildCompletedDocumentState(data),
       };
 
     case "session_closed":
@@ -597,18 +641,37 @@ export function useLegalChat() {
           const data = (await response.json()) as BootstrapSessionData;
           sessionIdRef.current = data.sessionUuid;
           embedSessionTokenRef.current = data.embedSessionToken;
+          const nextStep = resolveBootstrapStep(data.nextStep);
+          const welcomeMessage = data.message?.trim()
+            ? {
+                id: generateUUID(),
+                role: "assistant" as const,
+                type: "text" as const,
+                content: data.message,
+                step: nextStep,
+                data: {
+                  message: data.message,
+                  actions: [],
+                },
+                created_at: new Date(),
+              }
+            : null;
 
           setState((prev) => ({
             ...prev,
             sessionId: data.sessionUuid,
             embedSessionToken: data.embedSessionToken,
             limits: data.limits,
-            currentStep: "greeting" as const,
+            currentStep: nextStep,
             isLoading: false,
             greeting: {
               message: data.message || "",
               prompt: data.prompt || "请描述您的问题或案件情况：",
             },
+            messages:
+              welcomeMessage && prev.messages.length === 0
+                ? [welcomeMessage]
+                : prev.messages,
           }));
 
           return data;

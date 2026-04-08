@@ -84,10 +84,10 @@ export function LaborContractCheck({
         </Button>
       </div>
       {canSkip && onSkip && (
-        <Button 
-          className="w-full text-muted-foreground hover:text-primary transition-colors" 
-          disabled={isLoading} 
-          onClick={onSkip} 
+        <Button
+          className="w-full text-muted-foreground hover:text-primary transition-colors"
+          disabled={isLoading}
+          onClick={onSkip}
           variant="ghost"
         >
           暂不确定，先跳过
@@ -106,11 +106,10 @@ interface FillQuestionsFormProps {
   onSubmit: (questions: FillQuestion[], values: Record<string, string>) => void;
 }
 
-export function FillQuestionsForm({
-  questions,
-  isLoading,
-  onSubmit,
-}: FillQuestionsFormProps, ref: any) {
+export function FillQuestionsForm(
+  { questions, isLoading, onSubmit }: FillQuestionsFormProps,
+  ref: any
+) {
   const [values, setValues] = useState<Record<string, string>>({});
 
   const handleChange = (questionId: string, value: string) => {
@@ -127,16 +126,26 @@ export function FillQuestionsForm({
     .every((q) => values[q.question_id]?.trim());
 
   return (
-    <form className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500" onSubmit={handleSubmit}>
+    <form
+      className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500"
+      onSubmit={handleSubmit}
+    >
       <div className="space-y-1 border-b pb-4">
-        <h3 className="font-bold text-lg tracking-tight text-foreground">完善细节信息</h3>
-        <p className="text-sm text-muted-foreground">请填写以下信息以便我们生成更精准的文书</p>
+        <h3 className="font-bold text-lg tracking-tight text-foreground">
+          完善细节信息
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          请填写以下信息以便我们生成更精准的文书
+        </p>
       </div>
 
       <div className="space-y-5">
         {questions.map((q) => (
           <div className="space-y-2" key={q.question_id}>
-            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80 px-1" htmlFor={q.question_id}>
+            <label
+              className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80 px-1"
+              htmlFor={q.question_id}
+            >
               {q.question}
               {q.required && <span className="ml-1 text-destructive">*</span>}
             </label>
@@ -153,7 +162,11 @@ export function FillQuestionsForm({
         ))}
       </div>
 
-      <Button className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all" disabled={isLoading || !isValid} type="submit">
+      <Button
+        className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
+        disabled={isLoading || !isValid}
+        type="submit"
+      >
         {isLoading ? "正在生成..." : "提交并预览文书"}
       </Button>
     </form>
@@ -190,18 +203,30 @@ export function SupplementForm({
     .every((f) => values[f.field_id]?.trim());
 
   return (
-    <form className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500" onSubmit={handleSubmit}>
+    <form
+      className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500"
+      onSubmit={handleSubmit}
+    >
       <div className="space-y-1 border-b pb-4">
-        <h3 className="font-bold text-lg tracking-tight text-foreground">补充必要材料</h3>
-        <p className="text-sm text-muted-foreground">最后一步，我们需要补充以下细节</p>
+        <h3 className="font-bold text-lg tracking-tight text-foreground">
+          补充必要材料
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          最后一步，我们需要补充以下细节
+        </p>
       </div>
 
       <div className="space-y-5">
         {fields.map((field) => (
           <div className="space-y-2" key={field.field_id}>
-            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80 px-1" htmlFor={field.field_id}>
+            <label
+              className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/80 px-1"
+              htmlFor={field.field_id}
+            >
               {field.label}
-              {field.required && <span className="ml-1 text-destructive">*</span>}
+              {field.required && (
+                <span className="ml-1 text-destructive">*</span>
+              )}
             </label>
 
             {field.type === "textarea" ? (
@@ -246,7 +271,11 @@ export function SupplementForm({
         ))}
       </div>
 
-      <Button className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all" disabled={isLoading || !isValid} type="submit">
+      <Button
+        className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
+        disabled={isLoading || !isValid}
+        type="submit"
+      >
         {isLoading ? "提交中..." : "确认并生成文书"}
       </Button>
     </form>
@@ -263,6 +292,8 @@ interface CompletedDocumentProps {
   docType: string;
   content: string;
   downloadUrl?: string;
+  canDownload?: boolean;
+  errorMessage?: string | null;
   isLoading?: boolean;
   onDownload: () => void | Promise<void>;
   onReset: () => void;
@@ -273,12 +304,15 @@ export function CompletedDocument({
   docType,
   content,
   downloadUrl,
+  canDownload,
+  errorMessage,
   isLoading,
   onDownload,
   onReset,
   onClose,
 }: CompletedDocumentProps) {
   const paperRef = useRef<HTMLDivElement | null>(null);
+  const hasPreviewContent = content.trim().length > 0;
 
   const getPrintableText = () => {
     const renderedContent = paperRef.current
@@ -441,8 +475,8 @@ export function CompletedDocument({
   };
 
   const handleDownload = () => {
-    if (!downloadUrl) {
-      toast.error("当前没有可下载的文书文件");
+    if (!canDownload || !downloadUrl) {
+      toast.error(errorMessage || "当前没有可下载的文书文件");
       return;
     }
 
@@ -451,15 +485,31 @@ export function CompletedDocument({
 
   return (
     <div className="space-y-6">
-      <DocumentPreview
-        title={docType}
-        content={content}
-        onCopy={handleCopy}
-        onPrint={handlePrint}
-        onDownload={handleDownload}
-        onEdit={() => toast.info("在线编辑功能即将上线")}
-        paperRef={paperRef}
-      />
+      {hasPreviewContent ? (
+        <DocumentPreview
+          canDownload={canDownload}
+          title={docType}
+          content={content}
+          onCopy={handleCopy}
+          onPrint={handlePrint}
+          onDownload={handleDownload}
+          onEdit={() => toast.info("在线编辑功能即将上线")}
+          paperRef={paperRef}
+        />
+      ) : (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+          <h3 className="font-semibold text-base">文书暂未生成成功</h3>
+          <p className="mt-2 text-sm leading-6 text-amber-800">
+            {errorMessage || "当前返回的文书结构不完整，请开启新对话后再试。"}
+          </p>
+        </div>
+      )}
+
+      {errorMessage && hasPreviewContent && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {errorMessage}
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3">
@@ -468,7 +518,7 @@ export function CompletedDocument({
             onClick={onReset}
             variant="outline"
           >
-            重新生成
+            重新对话
           </Button>
           {onClose && (
             <Button
@@ -575,7 +625,9 @@ export function PreQuestionsForm({
         <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="flex items-center justify-between px-1 text-foreground">
             <div className="font-bold text-sm">为您推荐的文书方案</div>
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-black">Smart AI Selection</span>
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-black">
+              Smart AI Selection
+            </span>
           </div>
           <div className="grid gap-3">
             {documentTypes.map((dt) => (
@@ -593,13 +645,19 @@ export function PreQuestionsForm({
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "flex size-8 items-center justify-center rounded-lg transition-colors",
-                      selectedDocType === dt.value ? "bg-primary text-primary-foreground" : "bg-muted group-hover:bg-primary/10 group-hover:text-primary"
-                    )}>
+                    <div
+                      className={cn(
+                        "flex size-8 items-center justify-center rounded-lg transition-colors",
+                        selectedDocType === dt.value
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted group-hover:bg-primary/10 group-hover:text-primary"
+                      )}
+                    >
                       <PlusIcon className="size-4" />
                     </div>
-                    <span className="font-bold text-sm tracking-tight text-foreground">{dt.label}</span>
+                    <span className="font-bold text-sm tracking-tight text-foreground">
+                      {dt.label}
+                    </span>
                   </div>
                   {inferredType === dt.value && requiredAnswered && (
                     <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary text-[10px] font-black uppercase tracking-tighter">
@@ -616,7 +674,11 @@ export function PreQuestionsForm({
         </div>
       )}
 
-      <Button className="h-14 w-full rounded-2xl bg-primary text-lg font-bold shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" disabled={isLoading || !isValid} type="submit">
+      <Button
+        className="h-14 w-full rounded-2xl bg-primary text-lg font-bold shadow-xl shadow-primary/20 active:scale-[0.98] transition-all"
+        disabled={isLoading || !isValid}
+        type="submit"
+      >
         {isLoading ? "正在处理流程..." : "开始生成正式文书"}
       </Button>
     </form>
@@ -645,14 +707,22 @@ export function PreQuestionsSubmitted({
           q.options.find((o) => o.value === selected)?.label || selected || "—";
         return (
           <div key={q.question_id}>
-            <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">{q.question}</div>
-            <div className="font-semibold text-[15px] leading-7 text-foreground">{label}</div>
+            <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">
+              {q.question}
+            </div>
+            <div className="font-semibold text-[15px] leading-7 text-foreground">
+              {label}
+            </div>
           </div>
         );
       })}
       <div className="border-t border-border/50 pt-3">
-        <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">最终文书类型</div>
-        <div className="font-bold text-[15px] leading-7 text-primary">{selectedTypeLabel}</div>
+        <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">
+          最终文书类型
+        </div>
+        <div className="font-bold text-[15px] leading-7 text-primary">
+          {selectedTypeLabel}
+        </div>
       </div>
     </div>
   );
@@ -674,7 +744,9 @@ export function FillQuestionsSubmitted({
     <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5 shadow-sm">
       {questions.map((q) => (
         <div key={q.question_id}>
-          <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">{q.question}</div>
+          <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">
+            {q.question}
+          </div>
           <div className="font-semibold text-[15px] leading-7 text-foreground">
             {values[q.question_id] || "—"}
           </div>
@@ -700,8 +772,12 @@ export function SupplementSubmitted({
     <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5 shadow-sm">
       {fields.map((f) => (
         <div key={f.field_id}>
-          <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">{f.label}</div>
-          <div className="font-semibold text-[15px] leading-7 text-foreground">{values[f.field_id] || "—"}</div>
+          <div className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest">
+            {f.label}
+          </div>
+          <div className="font-semibold text-[15px] leading-7 text-foreground">
+            {values[f.field_id] || "—"}
+          </div>
         </div>
       ))}
     </div>
@@ -724,9 +800,19 @@ export function SessionClosedBanner({
     <div className="space-y-4 rounded-2xl border border-dashed border-border/50 bg-muted/10 p-8 text-center animate-in fade-in zoom-in-95">
       <div className="flex flex-col items-center gap-2">
         <div className="size-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-           <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
-           </svg>
+          <svg
+            className="size-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              d="M5 13l4 4L19 7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+            />
+          </svg>
         </div>
         <div className="text-muted-foreground font-medium">
           {message || "咨询流程已闭环，感谢您的信任！"}

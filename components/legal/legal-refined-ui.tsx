@@ -203,6 +203,7 @@ DocumentPaper.displayName = "DocumentPaper";
 export function DocumentPreview({
   title,
   content,
+  canDownload = true,
   onDownload,
   onCopy,
   onPrint,
@@ -211,6 +212,7 @@ export function DocumentPreview({
 }: {
   title: string;
   content: string;
+  canDownload?: boolean;
   onDownload?: () => void;
   onCopy?: () => void;
   onPrint?: () => void;
@@ -270,6 +272,7 @@ export function DocumentPreview({
           </Button>
           <Button
             className="ml-1 rounded-full border-primary/20 hover:bg-primary/5 text-primary"
+            disabled={!canDownload}
             onClick={onDownload}
             size="sm"
             variant="outline"

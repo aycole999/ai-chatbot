@@ -15,6 +15,7 @@ import { useLegalChat } from "@/hooks/use-legal-chat";
 import type {
   FillQuestion,
   LegalAttachment,
+  LegalCompletedDocument,
   LegalMessage,
   LegalStep,
   PreQuestion,
@@ -466,12 +467,7 @@ interface StepInteractionProps {
   fillQuestions: FillQuestion[];
   documentTypes: import("@/lib/legal/types").DocumentTypeOption[];
   templateId: string | null;
-  completedDocument?: {
-    document_id: string;
-    doc_type: string;
-    content: string;
-    download_url: string;
-  };
+  completedDocument?: LegalCompletedDocument;
   isLoading: boolean;
   // Action props
   onContractCheck: (hasContract: boolean) => void;
@@ -578,9 +574,11 @@ function StepInteraction({
       if (completedDocument) {
         return (
           <CompletedDocument
+            canDownload={completedDocument.can_download}
             content={completedDocument.content}
             docType={completedDocument.doc_type}
             downloadUrl={completedDocument.download_url}
+            errorMessage={completedDocument.document_error}
             isLoading={isLoading}
             onClose={onClose}
             onDownload={() =>

@@ -7,7 +7,7 @@ import {
   requireEmbedToken,
   safeReadJson,
 } from "@/lib/legal/proxy-utils";
-import type { LegalApiResponse } from "@/lib/legal/types";
+import type { LegalApiResponse, LegalResponseData } from "@/lib/legal/types";
 
 const requestSchema = z.object({
   session_id: z.string(),
@@ -94,11 +94,11 @@ export async function POST(request: Request) {
       const result = payload.data as {
         sessionId?: string;
         nextStep?: string;
-        data?: Record<string, unknown> | null;
+        data?: LegalResponseData | null;
         message?: string | null;
       };
 
-      const responseData: Record<string, unknown> =
+      const responseData: LegalResponseData =
         (result.data && typeof result.data === "object" ? result.data : {}) ??
         {};
       if (!("message" in responseData) && result.message) {

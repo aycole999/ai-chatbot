@@ -52,47 +52,39 @@ export interface AttachmentAnalysis {
   duplicate_message?: string;
 }
 
-// 上游透传的嵌套数据（check_info / fill_questions 等阶段）
-export interface UpstreamNestedData {
-  missing_info?: Array<{ field: string; label: string; required: boolean }>;
-  collected_info?: Record<string, string>;
-  collected_facts?: Record<string, string>;
-  can_generate_document?: boolean;
-  consultation_count?: number;
-  multi_case?: Record<string, unknown>;
-  document?: {
-    type?: string;
-    name?: string;
-    content?: string;
-  };
-  download_url?: string;
-  completion_rate?: number;
-  selected_name?: string;
-  selected_type?: string;
+export interface MissingInfoItem {
+  field: string;
+  label: string;
+  required: boolean;
 }
 
-// 后端响应数据
+export interface LegalDocumentPayload {
+  type?: string;
+  name?: string;
+  content?: string;
+}
+
+// done.data / 非流式 result.data 的严格业务数据结构
 export interface LegalResponseData {
   // 通用字段
   message?: string;
   prompt?: string;
-
-  // 上游透传嵌套数据和可用操作
-  data?: UpstreamNestedData;
   actions?: string[];
 
-  // greeting 阶段
-  // - message, prompt
-
-  // consulting 阶段
-  // - data.can_generate_document, data.collected_facts
+  // consulting / check_info / fill_questions
+  missing_info?: MissingInfoItem[];
+  collected_info?: Record<string, string | null>;
+  collected_facts?: Record<string, string | null>;
+  can_generate_document?: boolean;
+  consultation_count?: number;
+  multi_case?: Record<string, unknown>;
   attachment_analysis?: AttachmentAnalysis[];
 
   // fill_questions 阶段（后端 fill_questions 和 supplement_info 都用 questions 字段）
   fill_questions?: FillQuestion[];
+  questions?: Array<PreQuestion | FillQuestion>;
 
   // pre_questions 阶段
-  questions?: PreQuestion[];
   document_types?: DocumentTypeOption[];
   template_id?: string;
 
@@ -105,9 +97,14 @@ export interface LegalResponseData {
   // completed 阶段
   document_id?: string;
   doc_type?: string;
-  content?: string;
   download_url?: string;
-  document_content?: string;
+  document?: LegalDocumentPayload;
+  document_error?: string;
+
+  // 其他业务扩展字段
+  completion_rate?: number;
+  selected_name?: string;
+  selected_type?: string;
 }
 
 // 补充信息字段定义
@@ -298,7 +295,7 @@ export interface LegalChatState {
 
   // consulting 阶段
   canGenerateDocument: boolean;
-  collectedFacts: Record<string, string> | null;
+  collectedFacts: Record<string, string | null> | null;
 
   // pre_questions 阶段
   preQuestions: PreQuestion[];
@@ -315,12 +312,7 @@ export interface LegalChatState {
   supplementFields: SupplementField[];
 
   // completed 阶段
-  completedDocument?: {
-    document_id: string;
-    doc_type: string;
-    content: string;
-    download_url: string;
-  };
+  completedDocument?: LegalCompletedDocument;
 }
 
 // 语音录制状态
@@ -329,4 +321,15 @@ export interface VoiceRecordingState {
   duration: number;
   isCancelled: boolean;
   error: string | null;
+}
+
+export interface LegalCompletedDocument {
+  document_id: string;
+  doc_type: string;
+  document_name: string;
+  document_type: string;
+  content: string;
+  download_url: string;
+  document_error: string | null;
+  can_download: boolean;
 }
