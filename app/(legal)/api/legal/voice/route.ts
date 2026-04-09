@@ -4,7 +4,9 @@ import {
   buildEmbedHeaders,
   getBaseUrl,
   getOrigin,
+  getReferer,
   requireEmbedToken,
+  withEmbedSourceHeaders,
 } from "@/lib/legal/proxy-utils";
 
 export async function POST(request: Request) {
@@ -39,9 +41,13 @@ export async function POST(request: Request) {
 
     const baseUrl = getBaseUrl();
     const origin = getOrigin(request);
+    const referer = getReferer(request);
     const response = await fetch(`${baseUrl}/app/legal/embed/voice/recognize`, {
       method: "POST",
-      headers: buildEmbedHeaders(token, origin),
+      headers: withEmbedSourceHeaders(
+        buildEmbedHeaders(token, origin, referer),
+        request
+      ),
       body: backendFormData,
       signal: request.signal,
     });

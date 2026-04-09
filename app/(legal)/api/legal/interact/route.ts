@@ -4,8 +4,10 @@ import {
   buildEmbedJsonHeaders,
   getBaseUrl,
   getOrigin,
+  getReferer,
   requireEmbedToken,
   safeReadJson,
+  withEmbedSourceHeaders,
 } from "@/lib/legal/proxy-utils";
 import type { LegalApiResponse, LegalResponseData } from "@/lib/legal/types";
 
@@ -51,7 +53,11 @@ export async function POST(request: Request) {
   try {
     const baseUrl = getBaseUrl();
     const origin = getOrigin(request);
-    const headers = buildEmbedJsonHeaders(token, origin);
+    const referer = getReferer(request);
+    const headers = withEmbedSourceHeaders(
+      buildEmbedJsonHeaders(token, origin, referer),
+      request
+    );
 
     const upstreamBody = {
       session_id: requestBody.session_id,

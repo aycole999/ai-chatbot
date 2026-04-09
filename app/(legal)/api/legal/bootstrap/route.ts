@@ -5,7 +5,9 @@ import {
   buildOriginHeaders,
   getBaseUrl,
   getOrigin,
+  getReferer,
   safeReadJson,
+  withEmbedSourceHeaders,
 } from "@/lib/legal/proxy-utils";
 
 const requestSchema = z.object({
@@ -30,10 +32,14 @@ export async function POST(request: Request) {
     const baseUrl = getBaseUrl();
 
     const origin = getOrigin(request);
+    const referer = getReferer(request);
 
     const response = await fetch(`${baseUrl}/app/legal/embed/bootstrap`, {
       method: "POST",
-      headers: buildOriginHeaders(origin),
+      headers: withEmbedSourceHeaders(
+        buildOriginHeaders(origin, referer),
+        request
+      ),
       body: JSON.stringify(body),
       signal: request.signal,
     });

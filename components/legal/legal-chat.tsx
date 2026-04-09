@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 
 import { useLegalChat } from "@/hooks/use-legal-chat";
+import { buildCurrentEmbedSourceRequestHeaders } from "@/lib/legal/embed-source";
 import type {
   DocumentTypeOption,
   FillQuestion,
@@ -92,6 +93,17 @@ function getDocumentDownloadRequestUrl(
   }
 
   return downloadUrl?.trim() || "";
+}
+
+function getDocumentDownloadHeaders(embedSessionToken: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "x-embed-session-token": embedSessionToken,
+  };
+
+  return {
+    ...headers,
+    ...buildCurrentEmbedSourceRequestHeaders(),
+  };
 }
 
 function getDownloadFileName(headers: Headers, documentId: string): string {
@@ -777,7 +789,10 @@ export function LegalChat() {
 
       const response = await fetch("/api/legal/upload", {
         method: "POST",
-        headers,
+        headers: {
+          ...headers,
+          ...buildCurrentEmbedSourceRequestHeaders(),
+        },
         body: formData,
       });
 
@@ -873,9 +888,7 @@ export function LegalChat() {
         const { embedSessionToken } = await ensureSessionReady();
         const response = await fetch(requestUrl, {
           method: "GET",
-          headers: {
-            "x-embed-session-token": embedSessionToken,
-          },
+          headers: getDocumentDownloadHeaders(embedSessionToken),
           cache: "no-store",
         });
 
@@ -927,7 +940,10 @@ export function LegalChat() {
 
         const response = await fetch("/api/legal/voice", {
           method: "POST",
-          headers,
+          headers: {
+            ...headers,
+            ...buildCurrentEmbedSourceRequestHeaders(),
+          },
           body: formData,
         });
 

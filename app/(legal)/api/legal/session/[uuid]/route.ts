@@ -4,7 +4,9 @@ import {
   buildEmbedHeaders,
   getBaseUrl,
   getOrigin,
+  getReferer,
   requireEmbedToken,
+  withEmbedSourceHeaders,
 } from "@/lib/legal/proxy-utils";
 
 export async function GET(
@@ -30,9 +32,13 @@ export async function GET(
   try {
     const baseUrl = getBaseUrl();
     const origin = getOrigin(request);
+    const referer = getReferer(request);
     const response = await fetch(`${baseUrl}/app/legal/embed/session/${uuid}`, {
       method: "GET",
-      headers: buildEmbedHeaders(token, origin),
+      headers: withEmbedSourceHeaders(
+        buildEmbedHeaders(token, origin, referer),
+        request
+      ),
       signal: request.signal,
     });
 

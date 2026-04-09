@@ -4,8 +4,10 @@ import {
   buildEmbedHeaders,
   getBaseUrl,
   getOrigin,
+  getReferer,
   requireEmbedToken,
   safeReadJson,
+  withEmbedSourceHeaders,
 } from "@/lib/legal/proxy-utils";
 
 function buildProxyHeaders(upstream: Response): Headers {
@@ -62,9 +64,13 @@ export async function GET(
   try {
     const upstreamUrl = `${getBaseUrl()}/app/legal/embed/document/download/${encodeURIComponent(documentId)}`;
     const origin = getOrigin(request);
+    const referer = getReferer(request);
     const upstream = await fetch(upstreamUrl, {
       method: "GET",
-      headers: buildEmbedHeaders(token, origin),
+      headers: withEmbedSourceHeaders(
+        buildEmbedHeaders(token, origin, referer),
+        request
+      ),
       signal: request.signal,
       cache: "no-store",
     });

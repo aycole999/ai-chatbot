@@ -5,7 +5,9 @@ import {
   buildEmbedJsonHeaders,
   getBaseUrl,
   getOrigin,
+  getReferer,
   requireEmbedToken,
+  withEmbedSourceHeaders,
 } from "@/lib/legal/proxy-utils";
 
 const requestSchema = z.object({
@@ -34,9 +36,13 @@ export async function POST(request: Request) {
   try {
     const baseUrl = getBaseUrl();
     const origin = getOrigin(request);
+    const referer = getReferer(request);
     const response = await fetch(`${baseUrl}/app/legal/embed/cancel`, {
       method: "POST",
-      headers: buildEmbedJsonHeaders(token, origin),
+      headers: withEmbedSourceHeaders(
+        buildEmbedJsonHeaders(token, origin, referer),
+        request
+      ),
       body: JSON.stringify(body),
       signal: request.signal,
     });

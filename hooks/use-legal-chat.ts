@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { buildCurrentEmbedSourceRequestHeaders } from "@/lib/legal/embed-source";
 import { readSSEStreamWithAbort } from "@/lib/legal/stream-parser";
 import type {
   FillQuestion,
@@ -437,6 +438,14 @@ export function useLegalChat() {
   const initSessionPromiseRef =
     useRef<Promise<BootstrapSessionData | null> | null>(null);
 
+  const buildClientRequestHeaders = useCallback(
+    (headers: Record<string, string> = {}) => ({
+      ...headers,
+      ...buildCurrentEmbedSourceRequestHeaders(),
+    }),
+    []
+  );
+
   useEffect(() => {
     sessionIdRef.current = state.sessionId;
     embedSessionTokenRef.current = state.embedSessionToken;
@@ -452,12 +461,12 @@ export function useLegalChat() {
       }
       return fetch("/api/legal/interact", {
         method: "POST",
-        headers,
+        headers: buildClientRequestHeaders(headers),
         body: JSON.stringify(body),
         signal,
       });
     },
-    []
+    [buildClientRequestHeaders]
   );
 
   const recommendPreQuestionDocumentType = useCallback(
@@ -475,10 +484,10 @@ export function useLegalChat() {
 
       const response = await fetch("/api/legal/pre-questions/recommend", {
         method: "POST",
-        headers: {
+        headers: buildClientRequestHeaders({
           "Content-Type": "application/json",
           "x-embed-session-token": embedSessionToken,
-        },
+        }),
         body: JSON.stringify({
           session_id: sessionId,
           template_id: templateId,
@@ -496,7 +505,7 @@ export function useLegalChat() {
 
       return (await response.json()) as PreQuestionRecommendation;
     },
-    []
+    [buildClientRequestHeaders]
   );
 
   const postCancel = useCallback(async (sessionId: string) => {
@@ -509,13 +518,13 @@ export function useLegalChat() {
       }
       await fetch("/api/legal/cancel", {
         method: "POST",
-        headers,
+        headers: buildClientRequestHeaders(headers),
         body: JSON.stringify({ sessionUuid: sessionId }),
       });
     } catch {
       // best-effort
     }
-  }, []);
+  }, [buildClientRequestHeaders]);
 
   // 添加用户消息
   const addUserMessage = useCallback(
@@ -658,7 +667,9 @@ export function useLegalChat() {
 
           const response = await fetch("/api/legal/bootstrap", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: buildClientRequestHeaders({
+              "Content-Type": "application/json",
+            }),
             body: JSON.stringify({
               captchaToken: "mock-pass",
               clientNonce: `nonce-${Date.now()}-${generateUUID().slice(0, 8)}`,
@@ -742,7 +753,7 @@ export function useLegalChat() {
       }
     });
     return bootstrapPromise;
-  }, []);
+  }, [buildClientRequestHeaders]);
 
   const ensureSessionReady = useCallback(async () => {
     if (sessionIdRef.current && embedSessionTokenRef.current) {
