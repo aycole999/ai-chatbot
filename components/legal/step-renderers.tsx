@@ -5,41 +5,19 @@
  */
 
 import { useRef, useState } from "react";
-import { PlusIcon } from "@/components/icons";
+import { toast } from "sonner";
 import type {
   DocumentTypeOption,
   FillQuestion,
   PreQuestion,
+  PreQuestionRecommendation,
   SupplementField,
 } from "@/lib/legal/types";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
-
-// ============================================================
-// 文书类型自动推荐策略
-// ============================================================
-function inferDocumentType(answers: Record<string, string>): string {
-  const q1 = answers.q1 || "";
-  const q2 = answers.q2 || "";
-  const q3 = answers.q3 || "";
-  const q4 = answers.q4 || "";
-
-  if (q1 === "yes" && q2 === "secondary" && q4 === "unstable") {
-    return "payment_order";
-  }
-  if (q1 === "no" && q3 === "urgent") {
-    return "reconciliation_letter";
-  }
-  if (q1 === "yes" && q2 === "secondary" && q4 === "stable") {
-    return "complaint_letter";
-  }
-  if (q2 === "priority") {
-    return "labor_arbitration";
-  }
-  return "labor_arbitration";
-}
+import { DocumentPreview } from "./legal-refined-ui";
 
 // ============================================================
 // 劳动合同检查 (check_labor_contract 阶段)
@@ -108,7 +86,7 @@ interface FillQuestionsFormProps {
 
 export function FillQuestionsForm(
   { questions, isLoading, onSubmit }: FillQuestionsFormProps,
-  ref: any
+  _ref: any
 ) {
   const [values, setValues] = useState<Record<string, string>>({});
 
@@ -281,9 +259,6 @@ export function SupplementForm({
     </form>
   );
 }
-
-import { DocumentPreview } from "./legal-refined-ui";
-import { toast } from "sonner";
 
 // ============================================================
 // 完成状态 (completed 阶段)
@@ -488,13 +463,13 @@ export function CompletedDocument({
       {hasPreviewContent ? (
         <DocumentPreview
           canDownload={canDownload}
-          title={docType}
           content={content}
           onCopy={handleCopy}
-          onPrint={handlePrint}
           onDownload={handleDownload}
           onEdit={() => toast.info("在线编辑功能即将上线")}
+          onPrint={handlePrint}
           paperRef={paperRef}
+          title={docType}
         />
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
@@ -544,6 +519,11 @@ interface PreQuestionsFormProps {
   documentTypes: DocumentTypeOption[];
   templateId: string;
   isLoading?: boolean;
+  onRecommend: (
+    templateId: string,
+    answers: Record<string, string>,
+    signal?: AbortSignal
+  ) => Promise<PreQuestionRecommendation>;
   onSubmit: (
     templateId: string,
     answers: Record<string, string>,
@@ -558,129 +538,308 @@ export function PreQuestionsForm({
   documentTypes,
   templateId,
   isLoading,
+  onRecommend,
   onSubmit,
 }: PreQuestionsFormProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [selectedDocType, setSelectedDocType] = useState<string>("");
+  const [recommendation, setRecommendation] =
+    useState<PreQuestionRecommendation | null>(null);
+  const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
+  const [isSkipped, setIsSkipped] = useState(false);
+  const [stage, setStage] = useState<"questions" | "selection">("questions");
+  const [selectionSource, setSelectionSource] = useState<
+    "manual" | "recommendation" | null
+  >(null);
+  const recommendAbortRef = useRef<AbortController | null>(null);
+
+  const requiredQuestions = questions.filter((question) => question.required);
+  const allOptionalQuestions =
+    questions.length > 0 && requiredQuestions.length === 0;
+  const requiredAnswered = requiredQuestions.every(
+    (question) => answers[question.question_id]
+  );
+  const isQuestionStage = stage === "questions";
+  const isSelectionStage = stage === "selection";
+  const isBusy = Boolean(isLoading || isRecommendationLoading);
 
   const handleAnswer = (questionId: string, value: string) => {
-    const next = { ...answers, [questionId]: value };
-    setAnswers(next);
-    const inferred = inferDocumentType(next);
-    if (documentTypes.some((dt) => dt.value === inferred)) {
-      setSelectedDocType(inferred);
+    setAnswers((currentAnswers) => ({
+      ...currentAnswers,
+      [questionId]: value,
+    }));
+  };
+
+  const handleSkip = () => {
+    if (recommendAbortRef.current) {
+      recommendAbortRef.current.abort();
+      recommendAbortRef.current = null;
+    }
+
+    setIsSkipped(true);
+    setAnswers({});
+    setRecommendation(null);
+    setIsRecommendationLoading(false);
+    setStage("selection");
+
+    if (selectionSource === "recommendation") {
+      setSelectedDocType("");
+      setSelectionSource(null);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSelectDocType = (value: string) => {
+    setSelectedDocType(value);
+    setSelectionSource("manual");
+  };
+
+  const handleRecommendSubmit = async () => {
+    if (requiredQuestions.length > 0 && !requiredAnswered) {
+      return;
+    }
+
+    if (recommendAbortRef.current) {
+      recommendAbortRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    recommendAbortRef.current = controller;
+
+    setIsSkipped(false);
+    setRecommendation(null);
+    setIsRecommendationLoading(true);
+
+    try {
+      const result = await onRecommend(templateId, answers, controller.signal);
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      setRecommendation(result);
+
+      const recommendedType = result.recommendedType;
+      const hasRecommendedType =
+        Boolean(recommendedType) &&
+        documentTypes.some(
+          (documentType) => documentType.value === recommendedType
+        );
+
+      if (result.matched && hasRecommendedType) {
+        if (selectionSource !== "manual") {
+          setSelectedDocType(recommendedType ?? "");
+          setSelectionSource("recommendation");
+        }
+      } else if (selectionSource === "recommendation") {
+        setSelectedDocType("");
+        setSelectionSource(null);
+      }
+    } catch {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      setRecommendation(null);
+      if (selectionSource === "recommendation") {
+        setSelectedDocType("");
+        setSelectionSource(null);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsRecommendationLoading(false);
+        setStage("selection");
+      }
+      if (recommendAbortRef.current === controller) {
+        recommendAbortRef.current = null;
+      }
+    }
+  };
+
+  const handleBackToQuestions = () => {
+    if (recommendAbortRef.current) {
+      recommendAbortRef.current.abort();
+      recommendAbortRef.current = null;
+    }
+
+    setStage("questions");
+    setIsRecommendationLoading(false);
+    setIsSkipped(false);
+  };
+
+  const handleFinalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedDocType) {
-      const dtLabel =
-        documentTypes.find((dt) => dt.value === selectedDocType)?.label || "";
-      onSubmit(templateId, answers, questions, selectedDocType, dtLabel);
+    if (!selectedDocType) {
+      return;
     }
+
+    const submittedAnswers = isSkipped ? {} : answers;
+    const dtLabel =
+      documentTypes.find((dt) => dt.value === selectedDocType)?.label || "";
+    onSubmit(templateId, submittedAnswers, questions, selectedDocType, dtLabel);
   };
 
-  const requiredAnswered = questions
-    .filter((q) => q.required)
-    .every((q) => answers[q.question_id]);
-  const isValid = requiredAnswered && selectedDocType !== "";
-  const inferredType = inferDocumentType(answers);
+  const canProceedToRecommendation =
+    requiredQuestions.length === 0 || requiredAnswered;
+  const canSubmitSelection = selectedDocType !== "";
+  const matchedRecommendedType =
+    !isSkipped && recommendation?.matched ? recommendation.recommendedType : "";
+  const recommendationReason = recommendation?.reason?.trim() || "";
+  const selectionDescription = isSkipped
+    ? "您已跳过问卷，请直接选择最合适的文书类型。"
+    : recommendationReason ||
+      (matchedRecommendedType
+        ? "已根据问卷结果为您推荐文书类型，您也可以手动调整。"
+        : "暂未命中推荐规则，请手动选择最合适的文书类型。");
 
   return (
-    <form className="space-y-8" onSubmit={handleSubmit}>
-      <div className="space-y-4">
-        {questions.map((q) => (
-          <div
-            className="group space-y-3 rounded-2xl border border-border/50 bg-background/50 p-5 transition-all hover:border-primary/20 hover:shadow-md"
-            key={q.question_id}
-          >
-            <div className="font-bold text-sm tracking-tight px-1 text-foreground">
-              {q.question}
-              {q.required && <span className="ml-1 text-destructive">*</span>}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {q.options.map((opt) => (
-                <button
-                  className={cn(
-                    "relative overflow-hidden rounded-xl border px-4 py-2.5 text-sm font-medium transition-all",
-                    answers[q.question_id] === opt.value
-                      ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]"
-                      : "bg-background hover:border-primary/50 hover:bg-primary/5"
-                  )}
-                  disabled={isLoading}
-                  key={opt.value}
-                  onClick={() => handleAnswer(q.question_id, opt.value)}
-                  type="button"
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+    <form
+      className="space-y-6 rounded-2xl border border-border/50 bg-background p-6 shadow-xl animate-in fade-in zoom-in-95 duration-500"
+      onSubmit={handleFinalSubmit}
+    >
+      <div className="space-y-1 border-b pb-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-lg tracking-tight text-foreground">
+              {isQuestionStage ? "填写问卷信息" : "确认文书类型"}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {isQuestionStage
+                ? "请先提交问卷，我们会在下一步展示文书推荐结果。"
+                : selectionDescription}
+            </p>
           </div>
-        ))}
+          {isQuestionStage && allOptionalQuestions && (
+            <Button
+              className="h-10 rounded-xl border border-amber-300 bg-amber-50 px-4 font-semibold text-amber-900 shadow-sm transition-all hover:bg-amber-100 hover:text-amber-950"
+              disabled={isBusy}
+              onClick={handleSkip}
+              type="button"
+              variant="ghost"
+            >
+              跳过问卷
+            </Button>
+          )}
+        </div>
       </div>
 
-      {documentTypes.length > 0 && (
-        <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-700">
-          <div className="flex items-center justify-between px-1 text-foreground">
-            <div className="font-bold text-sm">为您推荐的文书方案</div>
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-black">
-              Smart AI Selection
-            </span>
-          </div>
-          <div className="grid gap-3">
-            {documentTypes.map((dt) => (
-              <button
-                className={cn(
-                  "group relative w-full overflow-hidden rounded-2xl border p-4 text-left transition-all",
-                  selectedDocType === dt.value
-                    ? "border-primary bg-primary/5 ring-1 ring-primary shadow-inner"
-                    : "bg-background hover:border-primary/30 hover:shadow-sm"
-                )}
-                disabled={isLoading}
-                key={dt.value}
-                onClick={() => setSelectedDocType(dt.value)}
-                type="button"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        "flex size-8 items-center justify-center rounded-lg transition-colors",
-                        selectedDocType === dt.value
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted group-hover:bg-primary/10 group-hover:text-primary"
-                      )}
-                    >
-                      <PlusIcon className="size-4" />
-                    </div>
-                    <span className="font-bold text-sm tracking-tight text-foreground">
-                      {dt.label}
-                    </span>
-                  </div>
-                  {inferredType === dt.value && requiredAnswered && (
-                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary text-[10px] font-black uppercase tracking-tighter">
-                      AI RECOMENDED
-                    </span>
+      {isQuestionStage && (
+        <>
+          <div className="space-y-5">
+            {questions.map((q) => (
+              <div className="space-y-3" key={q.question_id}>
+                <div className="font-bold text-sm tracking-tight px-1 text-foreground">
+                  {q.question}
+                  {q.required && (
+                    <span className="ml-1 text-destructive">*</span>
                   )}
                 </div>
-                <div className="mt-2 text-muted-foreground text-xs pl-11 leading-relaxed opacity-80">
-                  {dt.description}
+                <div className="flex flex-wrap gap-2">
+                  {q.options.map((opt) => (
+                    <button
+                      className={cn(
+                        "relative overflow-hidden rounded-xl border px-4 py-2.5 text-sm font-medium transition-all",
+                        answers[q.question_id] === opt.value
+                          ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]"
+                          : "bg-muted/30 hover:border-primary/50 hover:bg-primary/5"
+                      )}
+                      disabled={isBusy}
+                      key={opt.value}
+                      onClick={() => handleAnswer(q.question_id, opt.value)}
+                      type="button"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
-        </div>
+
+          <Button
+            className="h-12 w-full rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
+            disabled={isBusy || !canProceedToRecommendation}
+            onClick={handleRecommendSubmit}
+            type="button"
+          >
+            {isRecommendationLoading ? "正在获取推荐..." : "提交问卷并查看推荐"}
+          </Button>
+        </>
       )}
 
-      <Button
-        className="h-14 w-full rounded-2xl bg-primary text-lg font-bold shadow-xl shadow-primary/20 active:scale-[0.98] transition-all"
-        disabled={isLoading || !isValid}
-        type="submit"
-      >
-        {isLoading ? "正在处理流程..." : "开始生成正式文书"}
-      </Button>
+      {isSelectionStage && (
+        <>
+          {matchedRecommendedType && (
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
+              推荐结果已生成，您可以直接采用推荐方案，也可以改选其他文书类型。
+            </div>
+          )}
+
+          {documentTypes.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-1 text-foreground">
+                <div className="font-bold text-sm">
+                  {matchedRecommendedType ? "推荐文书方案" : "请选择文书类型"}
+                </div>
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-black">
+                  {isSkipped ? "Manual Selection" : "Smart AI Selection"}
+                </span>
+              </div>
+
+              <div className="grid gap-3">
+                {documentTypes.map((dt) => (
+                  <button
+                    className={cn(
+                      "group relative w-full overflow-hidden rounded-2xl border p-4 text-left transition-all",
+                      selectedDocType === dt.value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary shadow-inner"
+                        : "bg-background hover:border-primary/30 hover:shadow-sm"
+                    )}
+                    disabled={isBusy}
+                    key={dt.value}
+                    onClick={() => handleSelectDocType(dt.value)}
+                    type="button"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <span className="font-bold text-sm tracking-tight text-foreground">
+                          {dt.label}
+                        </span>
+                      </div>
+                      {matchedRecommendedType === dt.value && (
+                        <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary text-[10px] font-black uppercase tracking-tighter">
+                          AI 推荐
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 text-muted-foreground text-xs leading-relaxed opacity-80">
+                      {dt.description}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <Button
+              className="h-12 rounded-xl border-primary/20 hover:bg-primary/5 transition-all active:scale-95"
+              disabled={isBusy}
+              onClick={handleBackToQuestions}
+              type="button"
+              variant="outline"
+            >
+              返回问卷
+            </Button>
+
+            <Button
+              className="h-12 flex-1 rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
+              disabled={isBusy || !canSubmitSelection}
+              type="submit"
+            >
+              {isLoading ? "正在处理流程..." : "开始生成正式文书"}
+            </Button>
+          </div>
+        </>
+      )}
     </form>
   );
 }

@@ -14,6 +14,7 @@ import type {
   LegalResponseData,
   LegalStep,
   PreQuestion,
+  PreQuestionRecommendation,
   StreamEvent,
   SupplementField,
 } from "@/lib/legal/types";
@@ -455,6 +456,45 @@ export function useLegalChat() {
         body: JSON.stringify(body),
         signal,
       });
+    },
+    []
+  );
+
+  const recommendPreQuestionDocumentType = useCallback(
+    async (
+      templateId: string,
+      answers: Record<string, string>,
+      signal?: AbortSignal
+    ): Promise<PreQuestionRecommendation> => {
+      const sessionId = sessionIdRef.current;
+      const embedSessionToken = embedSessionTokenRef.current;
+
+      if (!sessionId || !embedSessionToken) {
+        throw new Error("Session is not ready");
+      }
+
+      const response = await fetch("/api/legal/pre-questions/recommend", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-embed-session-token": embedSessionToken,
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          template_id: templateId,
+          answers,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          (errorData as { error?: string }).error || "Recommend failed"
+        );
+      }
+
+      return (await response.json()) as PreQuestionRecommendation;
     },
     []
   );
@@ -1678,6 +1718,7 @@ export function useLegalChat() {
     submitSupplementInfo,
     generateDocument,
     submitPreQuestions,
+    recommendPreQuestionDocumentType,
     closeSession,
     stopStream,
     reset,

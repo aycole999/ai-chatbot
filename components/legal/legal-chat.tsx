@@ -13,12 +13,14 @@ import { toast } from "sonner";
 
 import { useLegalChat } from "@/hooks/use-legal-chat";
 import type {
+  DocumentTypeOption,
   FillQuestion,
   LegalAttachment,
   LegalCompletedDocument,
   LegalMessage,
   LegalStep,
   PreQuestion,
+  PreQuestionRecommendation,
   SupplementField,
 } from "@/lib/legal/types";
 import { cn } from "@/lib/utils";
@@ -29,6 +31,7 @@ import { Button } from "../ui/button";
 import { ImagePreview } from "../ui/image-preview";
 import { Textarea } from "../ui/textarea";
 import { AttachmentAnalysisCard } from "./attachment-analysis";
+import { ConsultationActionBar } from "./consultation-action-bar";
 import {
   CompletedDocument,
   FillQuestionsForm,
@@ -229,9 +232,21 @@ function getStreamingFooterLabel(step?: LegalStep) {
 function LegalMessageItem({
   message,
   isStreaming,
+  showConsultationActionBar,
+  canGenerateDocument,
+  isActionLoading,
+  onGenerateDocument,
+  onUploadFile,
+  isUploading,
 }: {
   message: LegalMessage;
   isStreaming?: boolean;
+  showConsultationActionBar?: boolean;
+  canGenerateDocument?: boolean;
+  isActionLoading?: boolean;
+  onGenerateDocument?: () => void;
+  onUploadFile?: () => void;
+  isUploading?: boolean;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -338,7 +353,9 @@ function LegalMessageItem({
                 message.content
               ) : (
                 <div className="prose prose-zinc dark:prose-invert prose-headings:font-bold prose-headings:text-foreground prose-p:text-muted-foreground prose-p:leading-7 max-w-none">
-                  <Response>{message.content}</Response>
+                  <Response isStreaming={isAssistantStreaming}>
+                    {message.content}
+                  </Response>
                 </div>
               )}
             </div>
@@ -392,6 +409,20 @@ function LegalMessageItem({
                 ))}
               </div>
             )}
+
+          {showConsultationActionBar &&
+            onGenerateDocument &&
+            onUploadFile &&
+            !isAssistantStreaming &&
+            !isUser && (
+              <ConsultationActionBar
+                canGenerate={canGenerateDocument}
+                isLoading={isActionLoading}
+                isUploading={isUploading}
+                onGenerate={onGenerateDocument}
+                onUpload={onUploadFile}
+              />
+            )}
         </div>
       </div>
     </div>
@@ -431,30 +462,6 @@ function ThinkingIndicator() {
   );
 }
 
-import { ConsultationActionCard } from "./legal-refined-ui";
-
-// ============================================================
-// 消息操作栏（consulting 阶段 "生成文书" 按钮）
-// ============================================================
-function MessageActionBar({
-  onGenerateDocument,
-  isLoading,
-}: {
-  onGenerateDocument: () => void;
-  isLoading?: boolean;
-}) {
-  return (
-    <div className="pl-10">
-      <ConsultationActionCard
-        description="基于以上咨询信息，我已经为您准备好了文书初稿的生成方案。您可以立即开始生成正式文书。"
-        isLoading={isLoading}
-        onGenerate={onGenerateDocument}
-        title="生成专业法律文书"
-      />
-    </div>
-  );
-}
-
 // ============================================================
 // 根据 step 渲染特定的交互组件
 // ============================================================
@@ -465,7 +472,7 @@ interface StepInteractionProps {
   supplementFields: SupplementField[];
   preQuestions: PreQuestion[];
   fillQuestions: FillQuestion[];
-  documentTypes: import("@/lib/legal/types").DocumentTypeOption[];
+  documentTypes: DocumentTypeOption[];
   templateId: string | null;
   completedDocument?: LegalCompletedDocument;
   isLoading: boolean;
@@ -487,6 +494,11 @@ interface StepInteractionProps {
     selectedType: string,
     selectedTypeLabel: string
   ) => void;
+  onRecommendPreQuestionDocumentType: (
+    templateId: string,
+    answers: Record<string, string>,
+    signal?: AbortSignal
+  ) => Promise<PreQuestionRecommendation>;
   onDownloadCompletedDocument: (
     documentId: string,
     downloadUrl?: string
@@ -510,6 +522,7 @@ function StepInteraction({
   onSubmitSupplement,
   onSubmitFillQuestions,
   onSubmitPreQuestions,
+  onRecommendPreQuestionDocumentType,
   onDownloadCompletedDocument,
   onClose,
   onReset,
@@ -561,6 +574,7 @@ function StepInteraction({
           <PreQuestionsForm
             documentTypes={documentTypes}
             isLoading={isLoading}
+            onRecommend={onRecommendPreQuestionDocumentType}
             onSubmit={onSubmitPreQuestions}
             questions={preQuestions}
             templateId={templateId}
@@ -628,6 +642,7 @@ export function LegalChat() {
     submitSupplementInfo,
     generateDocument,
     submitPreQuestions,
+    recommendPreQuestionDocumentType,
     closeSession,
     stopStream,
     reset,
@@ -964,14 +979,26 @@ export function LegalChat() {
     [sendMessage]
   );
 
+  const openFilePicker = useCallback(() => {
+    if (isLoading || isStreaming) {
+      return;
+    }
+
+    fileInputRef.current?.click();
+  }, [isLoading, isStreaming]);
+
   // 显示输入区域的条件
   const showInput = currentStep === "greeting" || currentStep === "consulting";
+  const showConsultationActionBar =
+    currentStep === "consulting" && canGenerateDocument;
 
-  const showGenerateDocumentAction =
-    currentStep === "consulting" &&
-    canGenerateDocument &&
-    !isLoading &&
-    !isStreaming;
+  let lastAssistantMessageId: string | null = null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant") {
+      lastAssistantMessageId = messages[index]?.id || null;
+      break;
+    }
+  }
 
   // 是否显示交互组件
   const showStepInteraction = currentStep !== "greeting";
@@ -992,9 +1019,18 @@ export function LegalChat() {
           <div className="space-y-4">
             {messages.map((message) => (
               <LegalMessageItem
+                canGenerateDocument={canGenerateDocument}
+                isActionLoading={isLoading}
                 isStreaming={isStreaming}
+                isUploading={uploadQueue.length > 0}
                 key={message.id}
                 message={message}
+                onGenerateDocument={generateDocument}
+                onUploadFile={openFilePicker}
+                showConsultationActionBar={
+                  showConsultationActionBar &&
+                  message.id === lastAssistantMessageId
+                }
               />
             ))}
 
@@ -1006,14 +1042,6 @@ export function LegalChat() {
               <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-600 dark:border-red-800 dark:bg-red-950/50">
                 {error}
               </div>
-            )}
-
-            {/* 消息操作栏：consulting 阶段可生成文书时显示 */}
-            {showGenerateDocumentAction && (
-              <MessageActionBar
-                isLoading={isLoading}
-                onGenerateDocument={generateDocument}
-              />
             )}
 
             {/* 阶段专属交互组件 */}
@@ -1028,6 +1056,9 @@ export function LegalChat() {
                 onClose={closeSession}
                 onContractCheck={handleContractCheck}
                 onDownloadCompletedDocument={downloadCompletedDocument}
+                onRecommendPreQuestionDocumentType={
+                  recommendPreQuestionDocumentType
+                }
                 onReset={startNewSession}
                 onSkipContract={skipContractCheck}
                 onSubmitFillQuestions={submitFillQuestions}
@@ -1112,11 +1143,10 @@ export function LegalChat() {
 
                 {!isRecordingMode && (
                   <div className="flex items-center gap-1 p-1">
-                    {/* 附件上传按钮 */}
                     <Button
                       className="size-8 hover:bg-muted"
                       disabled={isLoading || isStreaming}
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={openFilePicker}
                       size="icon"
                       title="上传附件"
                       variant="ghost"

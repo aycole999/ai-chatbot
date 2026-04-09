@@ -6,13 +6,16 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
 
 import { cn } from "@/lib/utils";
 
-type ResponseProps = ComponentProps<typeof Streamdown>;
+type ResponseProps = ComponentProps<typeof Streamdown> & {
+  isStreaming?: boolean;
+};
 
 type MarkdownNode = MarkdownContentNode | MarkdownSectionNode;
 
@@ -198,18 +201,22 @@ function collectSectionIds(nodes: MarkdownNode[]): string[] {
 }
 
 function createHeadingStreamdownProps(
-  props: Omit<ResponseProps, "children" | "className">
-): Omit<ResponseProps, "children" | "className" | "components" | "mode"> {
+  props: Omit<ResponseProps, "children" | "className" | "isStreaming">
+): Omit<
+  ResponseProps,
+  "children" | "className" | "components" | "mode" | "isStreaming"
+> {
   const nextProps = {
     ...props,
   } as Partial<ResponseProps>;
 
   delete nextProps.components;
+  delete nextProps.isStreaming;
   delete nextProps.mode;
 
   return nextProps as Omit<
     ResponseProps,
-    "children" | "className" | "components" | "mode"
+    "children" | "className" | "components" | "mode" | "isStreaming"
   >;
 }
 
@@ -232,7 +239,7 @@ function MarkdownChunk({
   streamdownProps,
 }: {
   content: string;
-  streamdownProps: Omit<ResponseProps, "children" | "className">;
+  streamdownProps: Omit<ResponseProps, "children" | "className" | "isStreaming">;
 }) {
   return (
     <Streamdown className={responseContentClass} {...streamdownProps}>
@@ -249,7 +256,7 @@ function SectionHeading({
   heading: string;
   headingStreamdownProps: Omit<
     ResponseProps,
-    "children" | "className" | "components" | "mode"
+    "children" | "className" | "components" | "mode" | "isStreaming"
   >;
   level: number;
 }) {
@@ -287,9 +294,9 @@ function CollapsibleSection({
   section: MarkdownSectionNode;
   headingStreamdownProps: Omit<
     ResponseProps,
-    "children" | "className" | "components" | "mode"
+    "children" | "className" | "components" | "mode" | "isStreaming"
   >;
-  streamdownProps: Omit<ResponseProps, "children" | "className">;
+  streamdownProps: Omit<ResponseProps, "children" | "className" | "isStreaming">;
 }) {
   const contentId = `${section.id}-content`;
 
@@ -341,20 +348,44 @@ function CollapsibleSection({
   );
 }
 
-export function Response({ className, children, ...props }: ResponseProps) {
+export function Response({
+  className,
+  children,
+  isStreaming = false,
+  ...props
+}: ResponseProps) {
   const markdown = typeof children === "string" ? children : "";
 
   const parsedNodes = useMemo(() => parseMarkdownSections(markdown), [markdown]);
   const sectionIds = useMemo(() => collectSectionIds(parsedNodes), [parsedNodes]);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const previousIsStreamingRef = useRef(isStreaming);
 
   useEffect(() => {
     setOpenSections((prev) => {
       const ids = new Set(sectionIds);
       let changed = false;
       const next: Record<string, boolean> = {};
+      const shouldCollapseAll =
+        previousIsStreamingRef.current && !isStreaming;
 
       for (const id of sectionIds) {
+        if (isStreaming) {
+          next[id] = true;
+          if (prev[id] !== true) {
+            changed = true;
+          }
+          continue;
+        }
+
+        if (shouldCollapseAll) {
+          next[id] = false;
+          if (prev[id] !== false) {
+            changed = true;
+          }
+          continue;
+        }
+
         if (id in prev) {
           next[id] = prev[id]!;
           continue;
@@ -370,11 +401,13 @@ export function Response({ className, children, ...props }: ResponseProps) {
         }
       }
 
+      previousIsStreamingRef.current = isStreaming;
+
       return changed || Object.keys(prev).length !== Object.keys(next).length
         ? next
         : prev;
     });
-  }, [sectionIds]);
+  }, [isStreaming, sectionIds]);
 
   const streamdownProps = props;
   const headingStreamdownProps = useMemo(

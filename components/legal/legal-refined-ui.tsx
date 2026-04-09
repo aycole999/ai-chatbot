@@ -1,14 +1,10 @@
 "use client";
 
-import { motion } from "framer-motion";
 import {
-  ArrowRight,
   CheckCircle2,
   Copy,
   Download,
   Edit3,
-  FileText,
-  Info,
   Printer,
   Sparkles,
 } from "lucide-react";
@@ -18,63 +14,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 
 /**
- * 1. 咨询引导卡片 (ConsultationActionCard)
- * 用于替代简单的 "生成文书" 按钮
- */
-export function ConsultationActionCard({
-  title,
-  description,
-  onGenerate,
-  isLoading,
-}: {
-  title: string;
-  description: string;
-  onGenerate: () => void;
-  isLoading?: boolean;
-}) {
-  return (
-    <motion.div
-      animate={{ opacity: 1, y: 0 }}
-      className="my-6 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background shadow-lg shadow-primary/5"
-      initial={{ opacity: 0, y: 20 }}
-    >
-      <div className="flex items-start gap-4 p-5">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-inner">
-          <FileText className="size-6" />
-        </div>
-        <div className="flex-1 space-y-1">
-          <h4 className="font-bold text-lg tracking-tight text-foreground flex items-center gap-2">
-            {title}
-            <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary uppercase tracking-wider">
-              AI 推荐
-            </span>
-          </h4>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {description}
-          </p>
-        </div>
-      </div>
-      <div className="border-t border-primary/10 bg-primary/5 p-3 px-5 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-          <Info className="size-3" />
-          预计 2 分钟内完成
-        </div>
-        <Button
-          className="rounded-full px-5 bg-primary hover:bg-primary/90 shadow-md transition-all active:scale-95"
-          disabled={isLoading}
-          onClick={onGenerate}
-          size="sm"
-        >
-          {isLoading ? "正在准备..." : "开始生成"}
-          <ArrowRight className="ml-2 size-4" />
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
-
-/**
- * 2. 虚拟 A4 文书预览 (DocumentPreview)
+ * 1. 虚拟 A4 文书预览 (DocumentPreview)
  * 模拟纸质文书质感
  */
 function normalizeDocumentTitle(value: string): string {

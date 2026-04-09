@@ -2,6 +2,14 @@
 
 当前项目是一个基于 Next.js 16 的法律文书助手前端，默认通过 Next.js API Routes 代理到后端 `BASE_URL`。
 
+语音输入在部署环境中的排查与上线注意事项见：
+
+- `docs/voice-input-deployment-guide.md`
+
+iframe 嵌入场景的对接说明见：
+
+- `docs/iframe-integration-guide.md`
+
 ## Runtime Requirements
 
 当前仓库不再依赖以下基础设施：

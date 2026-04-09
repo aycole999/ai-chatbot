@@ -31,6 +31,15 @@ export interface DocumentTypeOption {
   description: string;
 }
 
+export interface PreQuestionRecommendation {
+  matched: boolean;
+  recommendedType?: string;
+  recommendedName?: string;
+  recommendedDescription?: string;
+  recommendedRuleCode?: string;
+  reason?: string;
+}
+
 // 填充问题（fill_questions 阶段，文本输入）
 export interface FillQuestion {
   question_id: string;
