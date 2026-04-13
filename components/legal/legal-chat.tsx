@@ -18,6 +18,7 @@ import type {
   FillQuestion,
   LegalAttachment,
   LegalCompletedDocument,
+  LegalDisplayConfig,
   LegalMessage,
   LegalStep,
   PreQuestion,
@@ -95,7 +96,9 @@ function getDocumentDownloadRequestUrl(
   return downloadUrl?.trim() || "";
 }
 
-function getDocumentDownloadHeaders(embedSessionToken: string): Record<string, string> {
+function getDocumentDownloadHeaders(
+  embedSessionToken: string
+): Record<string, string> {
   const headers: Record<string, string> = {
     "x-embed-session-token": embedSessionToken,
   };
@@ -150,11 +153,57 @@ type UploadCredentialVo = {
 };
 
 const AUTO_SCROLL_THRESHOLD_PX = 96;
+const DEFAULT_LEGAL_DISPLAY_CONFIG: LegalDisplayConfig = {
+  title: "法律文书助手 Pro",
+  description:
+    "描述您的案件细节，我将为您提供法律分析，并自动构建符合法院要求的专业法律文书。",
+};
 
 // ============================================================
 // 法律聊天欢迎语
 // ============================================================
 function LegalGreeting() {
+  const [displayConfig, setDisplayConfig] = useState<LegalDisplayConfig>(
+    DEFAULT_LEGAL_DISPLAY_CONFIG
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadDisplayConfig = async () => {
+      try {
+        const response = await fetch("/api/legal/display/current", {
+          headers: buildCurrentEmbedSourceRequestHeaders(),
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as Partial<LegalDisplayConfig>;
+
+        setDisplayConfig({
+          title: data.title?.trim() || DEFAULT_LEGAL_DISPLAY_CONFIG.title,
+          description:
+            data.description?.trim() ||
+            DEFAULT_LEGAL_DISPLAY_CONFIG.description,
+        });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+      }
+    };
+
+    loadDisplayConfig().catch(() => undefined);
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
   return (
     <div
       className="mx-auto mt-8 flex size-full max-w-3xl flex-col items-center justify-center px-4 text-center md:mt-20 md:px-8"
@@ -175,7 +224,7 @@ function LegalGreeting() {
         initial={{ opacity: 0, y: 10 }}
         transition={{ delay: 0.2 }}
       >
-        法律文书助手 <span className="text-primary">Pro</span>
+        {displayConfig.title}
       </motion.div>
       <motion.div
         animate={{ opacity: 1, y: 0 }}
@@ -184,7 +233,7 @@ function LegalGreeting() {
         initial={{ opacity: 0, y: 10 }}
         transition={{ delay: 0.3 }}
       >
-        描述您的案件细节，我将为您提供法律分析，并自动构建符合法院要求的专业法律文书。
+        {displayConfig.description}
       </motion.div>
 
       {/* <motion.div 

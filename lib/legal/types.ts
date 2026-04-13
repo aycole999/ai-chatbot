@@ -183,6 +183,12 @@ export interface EmbedLimits {
   voiceLimitPerMinute: number;
 }
 
+// 首屏展示配置
+export interface LegalDisplayConfig {
+  title: string;
+  description: string;
+}
+
 // 语音识别响应
 export interface VoiceRecognizeResponse {
   text: string;
