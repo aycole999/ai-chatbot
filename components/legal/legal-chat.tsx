@@ -162,8 +162,8 @@ const DEFAULT_LEGAL_DISPLAY_CONFIG: LegalDisplayConfig = {
 };
 const LEGAL_GREETING_MARKDOWN_CLASS =
   "prose prose-zinc dark:prose-invert prose-p:my-0 prose-p:text-center prose-p:text-muted-foreground prose-p:leading-7 prose-p:whitespace-pre-line prose-headings:mt-0 prose-headings:text-center prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:text-primary/80 prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-mono prose-code:text-[0.9em] prose-code:text-foreground prose-code:before:hidden prose-code:after:hidden prose-ul:my-3 prose-ul:inline-block prose-ul:text-left prose-ul:pl-6 prose-ol:my-3 prose-ol:inline-block prose-ol:text-left prose-ol:pl-6 prose-li:my-1 prose-li:text-muted-foreground prose-li:whitespace-pre-line max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
-const LEGAL_GREETING_COLLAPSIBLE_MARKDOWN_CLASS =
-  "prose prose-zinc dark:prose-invert prose-p:my-0 prose-p:text-left prose-p:text-muted-foreground prose-p:leading-7 prose-p:whitespace-pre-line prose-headings:mt-0 prose-headings:text-left prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:text-primary/80 prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-mono prose-code:text-[0.9em] prose-code:text-foreground prose-code:before:hidden prose-code:after:hidden prose-ul:my-3 prose-ul:text-left prose-ul:pl-6 prose-ol:my-3 prose-ol:text-left prose-ol:pl-6 prose-li:my-1 prose-li:text-muted-foreground prose-li:whitespace-pre-line max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+const LEGAL_GREETING_COLLAPSIBLE_CONTENT_CLASS =
+  "prose prose-zinc dark:prose-invert prose-p:my-0 prose-p:text-left prose-p:text-muted-foreground prose-p:leading-7 prose-p:whitespace-pre-line prose-headings:mt-0 prose-headings:text-left prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:text-primary/80 prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-mono prose-code:text-[0.9em] prose-code:text-foreground prose-code:before:hidden prose-code:after:hidden prose-ul:my-3 prose-ul:text-left prose-ul:pl-0 prose-ol:my-3 prose-ol:text-left prose-ol:pl-0 prose-li:my-1 prose-li:text-muted-foreground prose-li:whitespace-pre-line max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 const GREETING_COLLAPSE_HEADING_PATTERN =
   /^\s*##\s+\[(collapse(?:\s+open)?)\](?:\s+(.*?))?\s*$/;
 const GREETING_LEVEL_TWO_HEADING_PATTERN = /^\s*##\s+/;
@@ -354,7 +354,7 @@ function LegalGreetingDescription({ markdown }: { markdown: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div>
       {blocks.map((block) => {
         if (block.type === "markdown") {
           return (
@@ -372,50 +372,55 @@ function LegalGreetingDescription({ markdown }: { markdown: string }) {
         const contentId = `${block.id}-content`;
 
         return (
-          <section
-            className="overflow-hidden rounded-2xl border border-border/60 bg-background/70 text-left shadow-sm"
-            key={block.id}
-          >
-            <button
-              aria-controls={contentId}
-              aria-expanded={isOpen}
-              className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
-              onClick={() =>
-                setOpenSections((prev) => ({
-                  ...prev,
-                  [block.id]: !(prev[block.id] ?? block.defaultOpen),
-                }))
-              }
-              type="button"
-            >
-              <span
-                className={cn(
-                  "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground transition-colors",
-                  isOpen && "text-primary"
-                )}
+          <section className="mt-6 w-full text-left" key={block.id}>
+            <h2 className="mb-2 w-full">
+              <button
+                aria-controls={contentId}
+                aria-expanded={isOpen}
+                className="group inline-flex w-full max-w-full flex-wrap items-center justify-start gap-x-2 gap-y-1 rounded-sm text-left text-[16px] font-normal text-muted-foreground leading-7 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+                onClick={() =>
+                  setOpenSections((prev) => ({
+                    ...prev,
+                    [block.id]: !(prev[block.id] ?? block.defaultOpen),
+                  }))
+                }
+                type="button"
               >
-                <ChevronDown
+                <span
                   className={cn(
-                    "size-4 transition-transform",
-                    !isOpen && "-rotate-90"
+                    "relative flex size-7 shrink-0 items-center justify-center rounded-full border transition-all duration-200",
+                    isOpen
+                      ? "border-primary/25 bg-primary/[0.12] text-primary shadow-sm shadow-primary/10"
+                      : "border-border/70 bg-background/80 text-muted-foreground group-hover:border-primary/20 group-hover:bg-primary/[0.06] group-hover:text-primary"
                   )}
-                />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h2 className="font-semibold leading-tight text-foreground">
-                  {block.title}
-                </h2>
-              </div>
-            </button>
+                >
+                  <span className="pointer-events-none absolute inset-[3px] rounded-full bg-background/70" />
+                  <ChevronDown
+                    className={cn(
+                      "relative z-10 size-4 transition-transform duration-200",
+                      !isOpen && "-rotate-90"
+                    )}
+                  />
+                </span>
+                <span>{block.title}</span>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none whitespace-nowrap shadow-sm transition-colors",
+                    isOpen
+                      ? "border-foreground/10 bg-foreground/[0.06] text-foreground/80"
+                      : "border-primary/20 bg-primary/[0.1] text-primary shadow-primary/10"
+                  )}
+                >
+                  {isOpen ? "点击收起" : "点击展开"}
+                </span>
+              </button>
+            </h2>
 
             {isOpen && (
-              <div
-                className="border-t border-border/50 px-4 pb-4 pt-3"
-                id={contentId}
-              >
+              <div className="w-full p-0" id={contentId}>
                 {block.content.trim().length > 0 ? (
                   <Streamdown
-                    className={LEGAL_GREETING_COLLAPSIBLE_MARKDOWN_CLASS}
+                    className={LEGAL_GREETING_COLLAPSIBLE_CONTENT_CLASS}
                     mode="static"
                   >
                     {block.content}
