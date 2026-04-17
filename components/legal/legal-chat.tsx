@@ -1,15 +1,17 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { FileText, MicIcon, PaperclipIcon } from "lucide-react";
+import { ChevronDown, FileText, MicIcon, PaperclipIcon } from "lucide-react";
 import {
   type ChangeEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
+import { Streamdown } from "streamdown";
 
 import { useLegalChat } from "@/hooks/use-legal-chat";
 import { buildCurrentEmbedSourceRequestHeaders } from "@/lib/legal/embed-source";
@@ -158,6 +160,275 @@ const DEFAULT_LEGAL_DISPLAY_CONFIG: LegalDisplayConfig = {
   description:
     "描述您的案件细节，我将为您提供法律分析，并自动构建符合法院要求的专业法律文书。",
 };
+const LEGAL_GREETING_MARKDOWN_CLASS =
+  "prose prose-zinc dark:prose-invert prose-p:my-0 prose-p:text-center prose-p:text-muted-foreground prose-p:leading-7 prose-p:whitespace-pre-line prose-headings:mt-0 prose-headings:text-center prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:text-primary/80 prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-mono prose-code:text-[0.9em] prose-code:text-foreground prose-code:before:hidden prose-code:after:hidden prose-ul:my-3 prose-ul:inline-block prose-ul:text-left prose-ul:pl-6 prose-ol:my-3 prose-ol:inline-block prose-ol:text-left prose-ol:pl-6 prose-li:my-1 prose-li:text-muted-foreground prose-li:whitespace-pre-line max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+const LEGAL_GREETING_COLLAPSIBLE_MARKDOWN_CLASS =
+  "prose prose-zinc dark:prose-invert prose-p:my-0 prose-p:text-left prose-p:text-muted-foreground prose-p:leading-7 prose-p:whitespace-pre-line prose-headings:mt-0 prose-headings:text-left prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:text-primary/80 prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-mono prose-code:text-[0.9em] prose-code:text-foreground prose-code:before:hidden prose-code:after:hidden prose-ul:my-3 prose-ul:text-left prose-ul:pl-6 prose-ol:my-3 prose-ol:text-left prose-ol:pl-6 prose-li:my-1 prose-li:text-muted-foreground prose-li:whitespace-pre-line max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+const GREETING_COLLAPSE_HEADING_PATTERN =
+  /^\s*##\s+\[(collapse(?:\s+open)?)\](?:\s+(.*?))?\s*$/;
+const GREETING_LEVEL_TWO_HEADING_PATTERN = /^\s*##\s+/;
+
+type GreetingDescriptionBlock =
+  | {
+      type: "markdown";
+      id: string;
+      content: string;
+    }
+  | {
+      type: "collapsible";
+      id: string;
+      title: string;
+      content: string;
+      defaultOpen: boolean;
+    };
+
+function normalizeGreetingDescription(markdown: string): string {
+  return markdown.replace(/\\n/g, "\n").replace(/\r\n?/g, "\n");
+}
+
+function parseGreetingDescriptionBlocks(
+  markdown: string
+): GreetingDescriptionBlock[] {
+  const lines = markdown.split("\n");
+  const blocks: GreetingDescriptionBlock[] = [];
+  let markdownBuffer: string[] = [];
+  let markdownCount = 0;
+  let collapseCount = 0;
+  let currentCollapsible: {
+    id: string;
+    title: string;
+    defaultOpen: boolean;
+    lines: string[];
+  } | null = null;
+  let activeFence: {
+    marker: "`" | "~";
+    length: number;
+  } | null = null;
+
+  const flushMarkdownBlock = () => {
+    const content = markdownBuffer.join("\n");
+    if (content.trim().length > 0) {
+      markdownCount += 1;
+      blocks.push({
+        type: "markdown",
+        id: `markdown-${markdownCount}`,
+        content,
+      });
+    }
+    markdownBuffer = [];
+  };
+
+  const flushCollapsibleBlock = () => {
+    if (!currentCollapsible) {
+      return;
+    }
+
+    blocks.push({
+      type: "collapsible",
+      id: currentCollapsible.id,
+      title: currentCollapsible.title,
+      content: currentCollapsible.lines.join("\n"),
+      defaultOpen: currentCollapsible.defaultOpen,
+    });
+    currentCollapsible = null;
+  };
+
+  for (const line of lines) {
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0] as "`" | "~";
+      const length = fenceMatch[1].length;
+
+      if (!activeFence) {
+        activeFence = { marker, length };
+      } else if (
+        activeFence.marker === marker &&
+        length >= activeFence.length
+      ) {
+        activeFence = null;
+      }
+
+      if (currentCollapsible) {
+        currentCollapsible.lines.push(line);
+      } else {
+        markdownBuffer.push(line);
+      }
+      continue;
+    }
+
+    if (!activeFence) {
+      const collapseMatch = line.match(GREETING_COLLAPSE_HEADING_PATTERN);
+      if (collapseMatch) {
+        flushCollapsibleBlock();
+        flushMarkdownBlock();
+
+        collapseCount += 1;
+        currentCollapsible = {
+          id: `collapse-${collapseCount}`,
+          title: collapseMatch[2]?.trim() || "",
+          defaultOpen: collapseMatch[1].includes("open"),
+          lines: [],
+        };
+        continue;
+      }
+
+      if (currentCollapsible && GREETING_LEVEL_TWO_HEADING_PATTERN.test(line)) {
+        flushCollapsibleBlock();
+        markdownBuffer.push(line);
+        continue;
+      }
+    }
+
+    if (currentCollapsible) {
+      currentCollapsible.lines.push(line);
+    } else {
+      markdownBuffer.push(line);
+    }
+  }
+
+  flushCollapsibleBlock();
+  flushMarkdownBlock();
+
+  return blocks;
+}
+
+function getGreetingCollapseState(blocks: GreetingDescriptionBlock[]) {
+  const nextState: Record<string, boolean> = {};
+
+  for (const block of blocks) {
+    if (block.type === "collapsible") {
+      nextState[block.id] = block.defaultOpen;
+    }
+  }
+
+  return nextState;
+}
+
+function LegalGreetingDescription({ markdown }: { markdown: string }) {
+  const normalizedMarkdown = useMemo(
+    () => normalizeGreetingDescription(markdown),
+    [markdown]
+  );
+  const blocks = useMemo(
+    () => parseGreetingDescriptionBlocks(normalizedMarkdown),
+    [normalizedMarkdown]
+  );
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(
+    () => getGreetingCollapseState(blocks)
+  );
+
+  useEffect(() => {
+    setOpenSections((prev) => {
+      const defaults = getGreetingCollapseState(blocks);
+      let changed = false;
+      const next: Record<string, boolean> = {};
+
+      for (const [id, defaultOpen] of Object.entries(defaults)) {
+        if (Object.hasOwn(prev, id)) {
+          next[id] = prev[id] ?? defaultOpen;
+          continue;
+        }
+
+        next[id] = defaultOpen;
+        changed = true;
+      }
+
+      if (Object.keys(prev).length !== Object.keys(next).length) {
+        changed = true;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [blocks]);
+
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  if (blocks.length === 1 && blocks[0]?.type === "markdown") {
+    return (
+      <Streamdown className={LEGAL_GREETING_MARKDOWN_CLASS} mode="static">
+        {blocks[0].content}
+      </Streamdown>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {blocks.map((block) => {
+        if (block.type === "markdown") {
+          return (
+            <Streamdown
+              className={LEGAL_GREETING_MARKDOWN_CLASS}
+              key={block.id}
+              mode="static"
+            >
+              {block.content}
+            </Streamdown>
+          );
+        }
+
+        const isOpen = openSections[block.id] ?? block.defaultOpen;
+        const contentId = `${block.id}-content`;
+
+        return (
+          <section
+            className="overflow-hidden rounded-2xl border border-border/60 bg-background/70 text-left shadow-sm"
+            key={block.id}
+          >
+            <button
+              aria-controls={contentId}
+              aria-expanded={isOpen}
+              className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+              onClick={() =>
+                setOpenSections((prev) => ({
+                  ...prev,
+                  [block.id]: !(prev[block.id] ?? block.defaultOpen),
+                }))
+              }
+              type="button"
+            >
+              <span
+                className={cn(
+                  "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground transition-colors",
+                  isOpen && "text-primary"
+                )}
+              >
+                <ChevronDown
+                  className={cn(
+                    "size-4 transition-transform",
+                    !isOpen && "-rotate-90"
+                  )}
+                />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold leading-tight text-foreground">
+                  {block.title}
+                </h2>
+              </div>
+            </button>
+
+            {isOpen && (
+              <div
+                className="border-t border-border/50 px-4 pb-4 pt-3"
+                id={contentId}
+              >
+                {block.content.trim().length > 0 ? (
+                  <Streamdown
+                    className={LEGAL_GREETING_COLLAPSIBLE_MARKDOWN_CLASS}
+                    mode="static"
+                  >
+                    {block.content}
+                  </Streamdown>
+                ) : null}
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
 
 // ============================================================
 // 法律聊天欢迎语
@@ -228,12 +499,12 @@ function LegalGreeting() {
       </motion.div>
       <motion.div
         animate={{ opacity: 1, y: 0 }}
-        className="mt-4 max-w-lg text-lg text-muted-foreground leading-relaxed"
+        className="mt-4 max-w-lg text-lg leading-relaxed"
         exit={{ opacity: 0, y: 10 }}
         initial={{ opacity: 0, y: 10 }}
         transition={{ delay: 0.3 }}
       >
-        {displayConfig.description}
+        <LegalGreetingDescription markdown={displayConfig.description} />
       </motion.div>
 
       {/* <motion.div 
