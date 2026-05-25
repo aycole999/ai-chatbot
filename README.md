@@ -43,20 +43,20 @@ pnpm start
 
 ## Docker Deployment
 
-仓库已补充 `script/docker/` 部署目录，用于和后端现有 docker/nginx 编排方式对齐。
+仓库已补充 `script/docker/` 部署目录，用于和 `legal-web` 一样通过独立 nginx 容器作为前端入口。
 如果需要在 IDEA 中直接构建镜像，推荐使用仓库根目录的 `Dockerfile`。
 
 推荐链路：
 
 ```text
-browser -> backend nginx -> ai-chatbot -> backend nginx /prod-api -> ruoyi-server
+browser / frpc / Nginx Proxy Manager -> ai-chatbot-nginx -> ai-chatbot -> backend nginx /prod-api -> ruoyi-server
 ```
 
 快速开始：
 
 ```bash
 ./script/docker/build-image.sh
-cd script/docker
+cd script/docker/prod/ai-chatbot
 cp .env.example .env
 docker compose up -d
 ```
@@ -66,7 +66,9 @@ docker compose up -d
 ```bash
 AI_CHATBOT_IMAGE=ai-chatbot:latest
 BACKEND_DOCKER_NETWORK=legal_ruoyi-net
+PROXY_DOCKER_NETWORK=proxy-net
 BASE_URL=http://nginx-web/prod-api
+AI_CHATBOT_HTTP_PORT=182
 ```
 
-如果需要基于源码本地构建镜像，则使用 `script/docker/docker-compose.build.yml`。后端 nginx 并入示例见 `script/docker/nginx/chat.server.conf.example`，详细说明见 `script/docker/README.md`。
+如果需要同时运行 dev/prod，使用 `script/docker/dev/ai-chatbot` 和 `script/docker/prod/ai-chatbot` 两套部署目录。详细说明见 `script/docker/README-dual-env.md`。

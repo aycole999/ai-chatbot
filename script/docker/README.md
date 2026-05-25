@@ -1,32 +1,42 @@
 # Docker Deployment
 
-当前目录提供的是前端 `ai-chatbot` 的容器化部署方案，目标是复用后端已有的 `nginx-web` 容器与 docker 网络。
-推荐交付方式与后端保持一致：本地或 IDEA 中构建镜像，服务器仅启动镜像。
+当前目录提供 `ai-chatbot` 的容器化部署方案。部署方式已改为独立 nginx 入口容器，整体模式对齐 `/home/aycole/ideaProgram/legal-web`。
+
+> 新部署优先使用 `script/docker/dev/ai-chatbot` 与 `script/docker/prod/ai-chatbot` 双环境目录。旧的 `script/docker/docker-compose.yml` 和 `script/docker/docker-compose.build.yml` 保留为单环境兼容入口。双环境说明见 `script/docker/README-dual-env.md`。
 
 ## 目录说明
 
-- `docker-compose.yml`：前端服务编排
-- `docker-compose.build.yml`：仅在需要基于源码本地构建镜像时使用
+- `docker-compose.yml`：镜像部署编排，服务器推荐使用
+- `docker-compose.build.yml`：需要基于源码本地构建镜像时使用
 - `app/Dockerfile`：Next.js 生产镜像构建
-- `nginx/chat.server.conf.example`：并入后端 nginx 的示例配置
-- `nginx/nginx.conf.port82.example`：保留现有后台前端，新增 `82` 端口给聊天前端
-- `nginx/nginx.conf.domain.example`：后台与聊天前端使用不同域名的完整示例
-- `.env.example`：部署变量示例
+- `ai-chatbot/nginx/conf/nginx.conf`：独立 nginx 入口配置
+- `ai-chatbot/nginx/log/`：独立 nginx 访问日志与错误日志目录
+- `.env.example`：镜像部署变量示例
 - `.env.build.example`：本地构建镜像时的变量示例
 
-## 推荐拓扑
+## 部署拓扑
 
-浏览器 -> 后端现有 nginx -> `ai-chatbot` 容器 -> 后端现有 nginx `/prod-api` -> `ruoyi-server*`
+```text
+浏览器 / frpc / Nginx Proxy Manager
+  -> proxy-net
+  -> ai-chatbot-nginx:80
+  -> chatbot-net
+  -> ai-chatbot:3000
+  -> ruoyi-net
+  -> nginx-web/prod-api
+  -> ruoyi-server*
+```
 
-这样做的原因：
+说明：
 
-1. 浏览器仍然只访问前端域名。
-2. Next.js Route Handlers 继续作为 BFF，保留当前的 token、Origin、SSE 代理逻辑。
-3. `BASE_URL` 指向 `http://nginx-web/prod-api` 后，可直接复用后端 nginx 的负载均衡能力。
+1. `ai-chatbot-nginx` 是当前前端的唯一对外入口。
+2. `ai-chatbot` 容器只在 Docker 网络内暴露 `3000`，不再直接映射宿主机端口。
+3. `ai-chatbot-nginx` 加入 `proxy-net`，外层 frpc / Nginx Proxy Manager 可以通过容器名 `ai-chatbot-nginx` 访问。
+4. `ai-chatbot` 继续通过 `BASE_URL=http://nginx-web/prod-api` 访问后端接口，保留 Next.js Route Handlers 中的 token、Origin、SSE 代理逻辑。
 
 ## 推荐部署方式
 
-线上环境默认使用 `docker-compose.yml` 直接启动镜像，不推荐在服务器上拿单独的 docker 目录再本地构建。
+线上环境默认使用 `prod/ai-chatbot/docker-compose.yml` 直接启动镜像，不推荐在服务器上拿单独的 docker 目录再本地构建。
 
 原因：
 
@@ -37,12 +47,6 @@
 ### 方式 A：镜像部署，推荐
 
 先在有完整源码的环境构建镜像。你如果和后端一样在 IDEA 的 Docker 服务里执行 Dockerfile，这一步也适用。
-
-构建时需要注意：
-
-1. 如果在命令行构建，推荐直接使用仓库根目录的 `Dockerfile`。
-2. 如果在 IDEA 中直接运行 Dockerfile，也推荐选择仓库根目录的 `Dockerfile`。
-3. `script/docker/app/Dockerfile` 仍可用，但 Build context 必须指向前端项目根目录，而不是 `script/docker/` 或 `script/docker/app/`。
 
 推荐先使用统一脚本构建镜像：
 
@@ -63,7 +67,7 @@ docker build -f Dockerfile -t registry.example.com/ai-chatbot:latest .
 docker push registry.example.com/ai-chatbot:latest
 ```
 
-如果不是推镜像仓库，而是像你后端那样把镜像导入服务器 docker，也可以：
+如果不是推镜像仓库，而是像后端那样把镜像导入服务器 docker，也可以：
 
 ```bash
 docker build -f Dockerfile -t ai-chatbot:latest .
@@ -81,7 +85,11 @@ docker load -i ai-chatbot-latest.tar
 ```text
 /home/hrsaas/docker/ai-chatbot/docker/
   ├─ docker-compose.yml
-  ├─ nginx/
+  ├─ ai-chatbot/
+  │  └─ nginx/
+  │     ├─ conf/
+  │     │  └─ nginx.conf
+  │     └─ log/
   ├─ README.md
   ├─ .env
   └─ .env.example
@@ -92,8 +100,9 @@ docker load -i ai-chatbot-latest.tar
 ```env
 AI_CHATBOT_IMAGE=ai-chatbot:latest
 BACKEND_DOCKER_NETWORK=legal_ruoyi-net
+PROXY_DOCKER_NETWORK=proxy-net
 BASE_URL=http://nginx-web/prod-api
-CHATBOT_PORT=3000
+AI_CHATBOT_HTTP_PORT=182
 ```
 
 启动：
@@ -113,87 +122,47 @@ docker compose up -d --force-recreate
 
 只有在服务器上存在完整前端源码时，才建议使用 `docker-compose.build.yml`。
 
-## 启动方式
-
-1. 确认后端 compose 已启动，并存在 docker 网络。
-2. 复制变量文件：
-
 ```bash
 cd script/docker
 cp .env.build.example .env
-```
-
-3. 启动前端容器：
-
-```bash
 docker compose -f docker-compose.build.yml up -d --build
 ```
 
-## 本地构建时的两种使用方式
-
-### 方式一：在当前前端仓库内直接执行
-
-目录结构保持仓库原样：
-
-```text
-ai-chatbot/
-  ├─ package.json
-  ├─ app/
-  ├─ script/docker/
-  └─ ...
-```
-
-此时 `.env` 可以直接使用默认值：
-
-```env
-APP_BUILD_CONTEXT=../..
-APP_DOCKERFILE=script/docker/app/Dockerfile
-```
-
-### 方式二：只把 docker 目录单独拷贝到部署目录
-
-例如你现在的部署目录：
-
-```text
-/home/hrsaas/docker/ai-chatbot/
-  ├─ app/
-  ├─ docker-compose.yml
-  ├─ nginx/
-  └─ README.md
-```
-
-这种方式下，`docker-compose.build.yml` 已经不在源码仓库内，必须手动指定前端源码真实路径。
+如果把整个 docker 目录单独拷贝到部署目录，必须手动指定前端源码真实路径。
 
 示例：
 
 ```env
 APP_BUILD_CONTEXT=/home/hrsaas/project/ai-chatbot
 APP_DOCKERFILE=/home/hrsaas/docker/ai-chatbot/app/Dockerfile
+AI_CHATBOT_IMAGE=ai-chatbot:latest
 BACKEND_DOCKER_NETWORK=legal_ruoyi-net
+PROXY_DOCKER_NETWORK=proxy-net
 BASE_URL=http://nginx-web/prod-api
-CHATBOT_PORT=3000
+AI_CHATBOT_HTTP_PORT=182
 ```
 
 注意：
 
 - `APP_BUILD_CONTEXT` 必须指向包含 `package.json`、`pnpm-lock.yaml`、`app/`、`public/` 的前端项目根目录。
-- 如果你只拷贝了 docker 目录，但机器上没有完整前端源码，那么镜像仍然无法构建。因为 Docker 构建需要项目源码，而不是只要部署文件。
+- 如果只拷贝了 docker 目录，但机器上没有完整前端源码，镜像仍然无法构建。
 
 ## 关键变量
 
 ```env
 AI_CHATBOT_IMAGE=ai-chatbot:latest
 BACKEND_DOCKER_NETWORK=legal_ruoyi-net
+PROXY_DOCKER_NETWORK=proxy-net
 BASE_URL=http://nginx-web/prod-api
-CHATBOT_PORT=3000
+AI_CHATBOT_HTTP_PORT=182
 ```
 
 说明：
 
 - `BACKEND_DOCKER_NETWORK` 需要与你后端 compose 实际创建的网络名一致，可通过 `docker network ls` 查看。
+- `PROXY_DOCKER_NETWORK` 需要与 frpc / Nginx Proxy Manager 所在外部网络一致。
 - `BASE_URL` 默认通过后端现有 `nginx-web` 容器访问 `/prod-api`，无需直接绑定某个 `ruoyi-server` 实例。
-- 默认镜像模式只需要 `AI_CHATBOT_IMAGE`、`BACKEND_DOCKER_NETWORK`、`BASE_URL`、`CHATBOT_PORT`。
-- 本地构建模式额外需要 `APP_BUILD_CONTEXT`、`APP_DOCKERFILE`。
+- `AI_CHATBOT_HTTP_PORT` 是独立 nginx 暴露到宿主机的端口；如果后端 nginx 仍占用 `182`，需要先释放该端口或改成其他端口。
 
 ## IDEA 构建说明
 
@@ -202,7 +171,7 @@ CHATBOT_PORT=3000
 当前推荐模式是：
 
 1. 先构建固定标签镜像，例如 `ai-chatbot:latest`
-2. 再由 `docker-compose.yml` 决定如何启动容器
+2. 再由 `docker-compose.yml` 同时启动 `ai-chatbot` 和 `ai-chatbot-nginx`
 
 如果你在 IDEA 中直接运行 `script/docker/app/Dockerfile`，IDEA 往往还会把 Build context 设成 Dockerfile 所在目录，于是构建上下文里没有 `package.json` 和 `pnpm-lock.yaml`，就会出现：
 
@@ -230,23 +199,18 @@ Image tag: ai-chatbot:latest
 docker compose up -d
 ```
 
-## 接入后端 nginx
-
-将 `nginx/chat.server.conf.example` 中的 `upstream` 与 `server` 合并到后端的 `script/docker/nginx/conf/nginx.conf` 的 `http {}` 内。
-
-推荐使用独立域名，例如：
-
-- `chat.example.com` -> 前端 `ai-chatbot`
-- `api.example.com` 或原有域名 -> 后端管理端/接口
-
-如果一定要使用同域名子路径（例如 `/chat/`），则需要额外改造 Next.js 的 `basePath` 和静态资源路径，当前仓库还没有做这层支持。
-
 ## 校验
 
-前端容器健康检查使用：
+应用容器健康检查：
 
 ```bash
-curl http://127.0.0.1:${CHATBOT_PORT:-3000}/ping
+docker compose ps
+```
+
+宿主机端口校验：
+
+```bash
+curl http://127.0.0.1:${AI_CHATBOT_HTTP_PORT:-182}/ping
 ```
 
 成功应返回：

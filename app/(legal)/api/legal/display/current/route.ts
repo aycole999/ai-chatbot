@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { connection, NextResponse } from "next/server";
 
 import {
   getBaseUrl,
@@ -9,6 +9,8 @@ import {
 } from "@/lib/legal/proxy-utils";
 
 export async function GET(request: Request) {
+  await connection();
+
   try {
     const baseUrl = getBaseUrl();
     const origin = getOrigin(request);

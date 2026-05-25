@@ -1,29 +1,31 @@
-name: ai-chatbot
+# Compose 项目名。不同 APP_ENV 会生成不同项目，避免 dev/prod 容器和网络冲突。
+name: ai-chatbot-${APP_ENV}
 
 networks:
+  # ai-chatbot 内部网络，Next.js 与入口 Nginx 通过该网络互通。
   chatbot-net:
+    name: ai-chatbot-${APP_ENV}-net
     driver: bridge
-  ruoyi-net:
+  # 后端开发环境网络。Next.js 通过该网络访问 legal-dev-nginx/prod-api。
+  backend-net:
     external: true
-    name: ${BACKEND_DOCKER_NETWORK:-legal_ruoyi-net}
+    name: ${BACKEND_DOCKER_NETWORK}
+  # 与 Nginx Proxy Manager 或 frpc 共享的网络。
   proxy-net:
     external: true
-    name: ${PROXY_DOCKER_NETWORK:-proxy-net}
+    name: ${PROXY_DOCKER_NETWORK}
 
 services:
   ai-chatbot:
-    build:
-      context: ${APP_BUILD_CONTEXT:-../..}
-      dockerfile: ${APP_DOCKERFILE:-script/docker/app/Dockerfile}
-    image: ${AI_CHATBOT_IMAGE:-ai-chatbot:latest}
-    container_name: ai-chatbot
+    image: ${AI_CHATBOT_IMAGE}
+    container_name: ai-chatbot-${APP_ENV}
     environment:
       TZ: Asia/Shanghai
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       HOSTNAME: 0.0.0.0
       PORT: 3000
-      BASE_URL: ${BASE_URL:-http://nginx-web/prod-api}
+      BASE_URL: ${BASE_URL}
     expose:
       - "3000"
     healthcheck:
@@ -35,23 +37,22 @@ services:
     restart: always
     networks:
       - chatbot-net
-      - ruoyi-net
+      - backend-net
 
   ai-chatbot-nginx:
     image: nginx:1.27-alpine
-    container_name: ai-chatbot-nginx
+    container_name: ai-chatbot-${APP_ENV}-nginx
     environment:
       TZ: Asia/Shanghai
     ports:
-      - "${AI_CHATBOT_HTTP_PORT:-182}:80"
+      - "${AI_CHATBOT_HTTP_PORT}:80"
     volumes:
-      - ./ai-chatbot/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ai-chatbot/nginx/log:/var/log/nginx
+      - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/log:/var/log/nginx
     depends_on:
       ai-chatbot:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - chatbot-net
-      - ruoyi-net
       - proxy-net

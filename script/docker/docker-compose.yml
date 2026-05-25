@@ -6,6 +6,9 @@ networks:
   ruoyi-net:
     external: true
     name: ${BACKEND_DOCKER_NETWORK:-legal_ruoyi-net}
+  proxy-net:
+    external: true
+    name: ${PROXY_DOCKER_NETWORK:-proxy-net}
 
 services:
   ai-chatbot:
@@ -20,8 +23,6 @@ services:
       BASE_URL: ${BASE_URL:-http://nginx-web/prod-api}
     expose:
       - "3000"
-    ports:
-      - "${CHATBOT_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ping | grep -q pong"]
       interval: 30s
@@ -32,3 +33,22 @@ services:
     networks:
       - chatbot-net
       - ruoyi-net
+
+  ai-chatbot-nginx:
+    image: nginx:1.27-alpine
+    container_name: ai-chatbot-nginx
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "${AI_CHATBOT_HTTP_PORT:-182}:80"
+    volumes:
+      - ./ai-chatbot/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ai-chatbot/nginx/log:/var/log/nginx
+    depends_on:
+      ai-chatbot:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - chatbot-net
+      - ruoyi-net
+      - proxy-net
